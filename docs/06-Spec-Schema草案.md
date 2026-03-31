@@ -1,4 +1,4 @@
-# Spec Schema 草案
+# Spec Schema v0.1 草案
 
 ## 1. 目标
 
@@ -6,9 +6,9 @@
 
 - 表达模板或规范的结构化规则
 - 驱动 `spec -> artifact` 合规检查
-- 支持后续 `artifact -> artifact` 差异比对扩展
+- 为后续 `artifact -> artifact` 差异比对保留演进空间
 
-本草案优先服务 `.docx` 论文场景，但字段命名不绑定单一格式。
+本版不是“最全 schema”，而是 MVP 可执行的最小子集。
 
 ## 2. 设计原则
 
@@ -17,8 +17,34 @@
 - source-aware：每条规则都能追溯来源
 - uncertainty-aware：支持待确认项与置信度
 - versioned：允许规则迭代而不破坏历史结果
+- docx-first, engine-generic：先服务 `.docx`，但命名不绑死在 Word
 
-## 3. 顶层对象
+## 3. v0.1 收敛结论
+
+v0.1 只稳定 4 类对象：
+
+- `Spec`
+- `Rule`
+- `Source`
+- `PendingConfirmation`
+
+本版明确做以下收敛：
+
+- 文档级约束不单独建 `document_constraints`，统一写成 `selector = document` 的规则
+- 逻辑区块不单独建 `content_blocks`，由 `DocumentIR` 中的 `role` 与 `selector` 对齐
+- `exceptions` 不进入首版执行闭环
+- selector 不引入 `where`、`:first` 之类复杂条件
+
+## 4. 实现降级策略
+
+为了避免 MVP 陷入工程沼泽，schema 在代码中的首版实现允许进一步降级：
+
+- `selector` 在运行时先作为路由键使用，例如直接映射到 `get_body_paragraphs()` 这类固定函数
+- 不要求先实现通用 selector DSL 解析器
+- 规则只覆盖 5 到 10 条高频检查，不追求“通用规则系统”一步到位
+- 当规则依赖页面真实渲染结果时，允许返回 `N/A` 或暂不纳入首版
+
+## 5. 顶层对象
 
 ```json
 {
@@ -28,12 +54,7 @@
   "name": "某大学本科毕业论文格式规范",
   "artifact_type": "document",
   "scope": "undergraduate_thesis",
-  "locale": "zh-CN",
-  "description": "用于本科论文格式检查",
-  "document_constraints": [],
-  "content_blocks": [],
   "rules": [],
-  "exceptions": [],
   "sources": [],
   "pending_confirmations": [],
   "metadata": {
@@ -43,7 +64,7 @@
 }
 ```
 
-## 4. 顶层字段定义
+## 6. 顶层字段定义
 
 - `spec_id`
   全局稳定 ID，不含版本。
@@ -54,21 +75,11 @@
 - `name`
   面向人的名称。
 - `artifact_type`
-  当前建议：`document`。后续可扩展 `slide`、`sheet`、`webpage`、`image_layout`。
+  v0.1 固定为 `document`。
 - `scope`
-  规则适用范围，如 `undergraduate_thesis`、`journal_manuscript`。
-- `locale`
-  默认语言环境。
-- `description`
-  补充说明。
-- `document_constraints`
-  文档级约束，如纸张、页边距、页码。
-- `content_blocks`
-  逻辑区块定义，如封面、摘要、正文、参考文献。
+  规则适用范围，如 `undergraduate_thesis`。
 - `rules`
   可执行规则列表。
-- `exceptions`
-  例外规则。
 - `sources`
   来源文件与来源片段。
 - `pending_confirmations`
@@ -76,65 +87,13 @@
 - `metadata`
   非执行信息。
 
-## 5. `document_constraints`
-
-用于约束整个 artifact 或文档级属性。
-
-示例：
-
-```json
-[
-  {
-    "id": "page-margin",
-    "type": "document_constraint",
-    "selector": "document",
-    "properties": {
-      "page_margin_top_cm": 2.5,
-      "page_margin_bottom_cm": 2.5,
-      "page_margin_left_cm": 3.0,
-      "page_margin_right_cm": 2.5
-    },
-    "severity": "major"
-  }
-]
-```
-
-## 6. `content_blocks`
-
-用于定义文档中的逻辑分区，方便 selector 解析与报告聚合。
-
-示例：
-
-```json
-[
-  {
-    "id": "cover",
-    "type": "content_block",
-    "name": "封面",
-    "selector": "cover"
-  },
-  {
-    "id": "body",
-    "type": "content_block",
-    "name": "正文",
-    "selector": "body"
-  },
-  {
-    "id": "references",
-    "type": "content_block",
-    "name": "参考文献",
-    "selector": "references"
-  }
-]
-```
-
 ## 7. `rules`
 
 ### 7.1 Rule 结构
 
 ```json
 {
-  "id": "body-line-spacing",
+  "id": "body-style",
   "type": "style_rule",
   "selector": "body.paragraph",
   "applies_to": "paragraph",
@@ -146,10 +105,10 @@
     "first_line_indent_chars": 2
   },
   "severity": "major",
-  "message_template": "正文段落格式不符合要求。",
+  "enabled": true,
   "source_refs": ["src-template-body-style"],
   "confidence": 0.96,
-  "enabled": true
+  "message_template": "正文段落格式不符合要求。"
 }
 ```
 
@@ -158,35 +117,40 @@
 - `id`
   当前 spec 内唯一。
 - `type`
-  建议首批枚举：
-  `style_rule | layout_rule | structure_rule | numbering_rule | caption_rule`
+  v0.1 建议枚举：
+  `style_rule | layout_rule | structure_rule | caption_rule`
 - `selector`
   目标对象定位语法。
 - `applies_to`
-  枚举：`document | section | paragraph | run | table | figure | caption | entry`
+  枚举：`document | section | paragraph | run | table | caption | entry`
 - `properties`
   需要比较的属性集合。
 - `severity`
   枚举：`critical | major | minor | info`
-- `message_template`
-  默认错误文案模板。
-- `source_refs`
-  指向 `sources[].id`。
-- `confidence`
-  规则可信度，范围 `0-1`。
 - `enabled`
   是否启用。
+- `source_refs`
+  指向 `sources[].id`，建议必填；人工补录场景可允许空数组。
+- `confidence`
+  规则可信度，范围 `0-1`，人工确认后的发布版可省略。
+- `message_template`
+  默认错误文案模板，可选。
+
+### 7.3 设计约束
+
+- 一个 rule 只表达一组同 selector、同 applies_to 的约束
+- 文档级约束也走 rule，不再单列顶层对象
+- 规则只表达“要求值”，不表达例外逻辑
 
 ## 8. `selector`
 
-MVP 采用轻量路径式 selector，后续可扩展到更通用谓词式 selector。
+MVP 采用轻量路径式 selector，后续再扩展更通用语法。
 
-### 8.1 MVP 允许值
+### 8.1 v0.1 允许值
 
 - `document`
 - `cover`
 - `abstract.zh.body`
-- `toc.entry.level1`
 - `body.heading.level1`
 - `body.heading.level2`
 - `body.paragraph`
@@ -194,23 +158,15 @@ MVP 采用轻量路径式 selector，后续可扩展到更通用谓词式 select
 - `table.caption`
 - `references.entry`
 
-### 8.2 长期扩展形态
+### 8.2 selector 约束
 
-- `block[type=paragraph]`
-- `block[role=caption]`
-- `section[name=body].paragraph`
-- `table.cell`
-- `layout.page.margin.top`
-
-### 8.3 selector 约束
-
-- selector 只描述“目标对象”，不内嵌业务判断
+- selector 只描述目标对象，不内嵌业务判断
 - selector 的解析必须是确定性的
-- 复杂条件后续以 `where` 子句扩展，不先塞入字符串里
+- v0.1 不支持 `where`、`:first`、复杂布尔条件
 
 ## 9. `properties`
 
-### 9.1 MVP 首批属性
+### 9.1 v0.1 首批属性
 
 - `font_family_zh`
 - `font_family_en`
@@ -230,7 +186,6 @@ MVP 采用轻量路径式 selector，后续可扩展到更通用谓词式 select
 - `page_margin_left_cm`
 - `page_margin_right_cm`
 - `caption_position`
-- `numbering_pattern`
 
 ### 9.2 单位约定
 
@@ -250,31 +205,9 @@ MVP 采用轻量路径式 selector，后续可扩展到更通用谓词式 select
 - `caption_position`
   `above | below`
 
-## 10. `exceptions`
-
-用于表达例外情况，不应在首版做复杂执行，但 schema 先保留。
-
-示例：
-
-```json
-[
-  {
-    "id": "body-first-paragraph-exception",
-    "rule_ref": "body-line-spacing",
-    "selector": "body.paragraph:first",
-    "override_properties": {
-      "first_line_indent_chars": 0
-    },
-    "reason": "正文首段不缩进"
-  }
-]
-```
-
-## 11. `sources`
+## 10. `sources`
 
 每条规则必须尽可能可追溯。
-
-示例：
 
 ```json
 [
@@ -301,11 +234,9 @@ MVP 采用轻量路径式 selector，后续可扩展到更通用谓词式 select
 - `excerpt`
   可选简短摘录
 
-## 12. `pending_confirmations`
+## 11. `pending_confirmations`
 
 用于承接 AI 或规则抽取中的不确定项。
-
-示例：
 
 ```json
 [
@@ -320,6 +251,26 @@ MVP 采用轻量路径式 selector，后续可扩展到更通用谓词式 select
   }
 ]
 ```
+
+字段建议：
+
+- `id`
+- `selector`
+- `candidate_property`
+- `candidate_value`
+- `reason`
+- `source_refs`
+- `confidence`
+
+## 12. 延后到 v0.2 之后的能力
+
+- `exceptions`
+- 独立的 `content_blocks`
+- 独立的 `document_constraints`
+- 复杂 selector 条件与 rule override
+- rule group、rule inheritance、条件启停
+
+这些能力不是不做，而是不该阻塞 `spec -> artifact` 的首版闭环。
 
 ## 13. Schema 版本策略
 
@@ -354,8 +305,7 @@ MVP 实现时，只要求落地以下部分：
 - `rules`
 - `sources`
 - `pending_confirmations`
-- 10 个左右高频属性
+- 10 到 15 个高频属性
 - 轻量 selector 语法
 
-`exceptions` 和复杂 block 关系可以先保留字段，不要求首版完整执行。
-
+这版 schema 的目的不是一次抽象完，而是保证 parser、checker、spec builder 先能对齐同一套结构。

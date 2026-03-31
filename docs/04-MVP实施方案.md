@@ -7,6 +7,7 @@
 同时确保一点：
 
 - MVP 虽然只服务 `.docx`，但代码骨架按“通用内核 + docx adapter”组织
+- [06-Spec-Schema草案.md](./06-Spec-Schema草案.md) 与 [07-ArtifactIR与DocumentIR草案.md](./07-ArtifactIR与DocumentIR草案.md) 作为目标模型保留，但首版代码按 bottom-up 方式实现
 
 ## 2. MVP 交付物
 
@@ -54,10 +55,14 @@
 
 - `Artifact`
 - `DocumentIR`
-- `Fact`
 - `Spec`
 - `Rule`
 - `Issue`
+
+约束：
+
+- 先只定义首版必需字段，不在 MVP 一开始落完整 `Fact` 层
+- selector 先当路由键使用，不实现通用 selector engine
 
 ### 任务 2：实现 DOCX 解析
 
@@ -77,6 +82,7 @@
 
 - 对外暴露为 `docx adapter`
 - 不把后续模块命名成 Word 专用模块
+- 不追求完整样式级联求值，只保留样式引用、direct formatting 与可稳定读取的属性
 
 ### 任务 3：实现模板规则抽取
 
@@ -98,6 +104,7 @@
 
 - comparator 接口预留双输入模式
 - 当前只落地 `spec -> artifact` 这一种执行方式
+- 首版直接用固定 selector 对应固定提取函数，不追求 DSL 泛化
 
 ### 任务 5：实现报告渲染
 
@@ -116,14 +123,15 @@
 
 ## 5. 推荐开发顺序
 
-1. 先定义 schema 和测试样例
-2. 再做 parser
+1. 先准备真实 fixture 并做 parser spike
+2. 再收敛最小 schema / IR
 3. 再做 checker
 4. 再接 spec draft builder
 5. 最后接 AI 辅助抽取
 
 原因：
 
+- 真实 `.docx` 脏数据会反向约束 schema / IR
 - parser 和 checker 是底盘
 - AI 流程放太前面会掩盖真实工程问题
 - 先把通用接口定稳，比后面返工重构成本低
