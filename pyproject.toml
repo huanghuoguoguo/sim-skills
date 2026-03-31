@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sim-skills"
+version = "0.1.0"
+description = "MVP CLI for document formatting compliance checks"
+requires-python = ">=3.10"
+dependencies = [
+  "python-docx>=0.8.11",
+]
+
+# Note: The main functionality is now provided via .claude/skills/
+# To install as a package (optional):
+#   pip install -e .
+# Or use skills directly:
+#   python3 .claude/skills/inspect-word/skill.py <file>
+#   python3 .claude/skills/extract-spec/skill.py <template>
+#   python3 .claude/skills/check-thesis/skill.py <thesis> <spec>
+#   python3 .claude/skills/compare-docs/skill.py <ref> <target>
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
