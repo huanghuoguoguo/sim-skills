@@ -19,7 +19,8 @@ The current target scenario is `.docx` / `.dotm` thesis formatting.
 
 - Prefer the fine-grained skills under `.claude/skills/` over older direct references to `word/scripts/*`
 - Default output artifacts should be written in the current working directory unless the user explicitly asks for temporary files
-- Use gate skills before treating a generated `spec.json` or `report.json` as final
+- Use `validate-spec` before treating a generated `spec.json` as final
+- Prefer outputting a `spec/` folder with `spec.json` and `spec.md`
 
 ## Core Commands
 
@@ -36,14 +37,8 @@ python3 .claude/skills/query-word-style/scripts/run.py <file.docx> --style "Head
 # Render a page for visual review
 python3 .claude/skills/render-word-page/scripts/run.py <file.docx> --page 1 --output page1.png
 
-# Validate spec structure
-python3 .claude/skills/validate-spec-structure/scripts/validate.py <spec.json>
-
-# Validate spec coverage
-python3 .claude/skills/validate-spec-coverage/scripts/validate.py <spec.json> --profile thesis-basic
-
-# Compatibility entry for spec validation
-python3 .claude/skills/validate-spec/scripts/validate.py <spec.json>
+# Validate spec for downstream consumption
+python3 .claude/skills/validate-spec/scripts/validate.py <spec.json> [--strict]
 
 # Check thesis against spec
 python3 .claude/skills/check-thesis/scripts/run.py <thesis.docx> <spec.json> [--output report.json]
@@ -53,6 +48,9 @@ python3 .claude/skills/validate-report/scripts/validate.py <report.json>
 
 # Compare two Word documents
 python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx> [--output diff.json]
+
+# Agent-based check for skipped rules
+python3 .claude/skills/agent-check-report/scripts/run.py <facts.json> <spec.json> <report.json> [--output agent_report.json]
 ```
 
 ## Skill Layout
@@ -66,13 +64,12 @@ python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx
 ├── read-text/                  # primitive: text file/docx text reader
 ├── infer-spec-fragment/        # analysis: selector-level rule fragment guidance
 ├── merge-spec-fragments/       # analysis: merge fragments into spec draft
-├── validate-spec-structure/    # gate: schema and field shape checks
-├── validate-spec-coverage/     # gate: selector/layout coverage checks
 ├── validate-report/            # gate: report structure checks
 ├── extract-spec/               # workflow: orchestrates spec extraction
 ├── check-thesis/               # workflow: orchestrates thesis checking
+├── agent-check-report/         # workflow: checks skipped rules with semantic matching
 ├── compare-docs/               # workflow/analysis: document diff
-├── validate-spec/              # compatibility entrypoint
+├── validate-spec/              # gate: validates spec.json for downstream use
 └── word/                       # compatibility container for legacy low-level scripts
 ```
 
@@ -90,8 +87,8 @@ Typical artifact flow:
 ```text
 Word file
   -> DocumentIR
-  -> spec fragment(s)
   -> spec.json
+  -> spec.md
   -> report.json / report.md
 ```
 
@@ -105,16 +102,15 @@ Preferred sequence:
 2. `query-word-text`
 3. `query-word-style`
 4. `render-word-page` only when visual conflict resolution is needed
-5. `infer-spec-fragment`
-6. `merge-spec-fragments`
-7. `validate-spec-structure`
-8. `validate-spec-coverage`
+5. write `spec.json`
+6. write `spec.md`
+7. `validate-spec`
 
 Notes:
 
-- Do not trust a generated spec until both gate checks pass
+- Do not trust a generated spec until `validate-spec` passes
+- Keep `spec.json` simple; move explanations and uncertainty into `spec.md`
 - When structure and visual evidence conflict, prefer programmatic facts first, then text clues, then visual inspection
-- Keep uncertain fields explicit in the output instead of silently guessing
 
 ### For thesis checking
 
@@ -122,24 +118,27 @@ Preferred sequence:
 
 1. `parse-word`
 2. `check-thesis`
-3. `validate-report`
+3. `agent-check-report` (optional, for skipped rules)
+4. `validate-report`
 
 Notes:
 
-- `check-thesis` can emit `report.json` plus a Markdown report
+- `check-thesis` emits `report.json` plus a Markdown report and `skipped_rules` list
+- `agent-check-report` checks skipped rules using semantic paragraph matching
 - Reports should be reviewed as artifacts in the working directory when the user wants manual verification
 
 ## Key Modules
 
-- `.claude/skills/word/scripts/docx_parser.py` - low-level Word parser
-- `.claude/skills/word/scripts/docx_parser_models.py` - parser dataclasses
+- `.claude/skills/word/scripts/docx_parser.py` - low-level Word parser (Chinese/English font separation, header/footer extraction)
+- `.claude/skills/word/scripts/docx_parser_models.py` - parser dataclasses (ParagraphFact, StyleFact, HeaderFooterFact)
 - `.claude/skills/query-word-style/scripts/run.py` - normalized style query wrapper
 - `.claude/skills/__libs__/spec_validation.py` - shared gate validation logic
-- `.claude/skills/check-thesis/scripts/run.py` - rule checking implementation
+- `.claude/skills/check-thesis/scripts/run.py` - rule checking implementation with skipped rules support
+- `.claude/skills/agent-check-report/scripts/run.py` - semantic matching for skipped rules
 
 ## Spec Expectations
 
-At minimum, a thesis-facing spec should usually contain:
+At minimum, a thesis-facing `spec.json` should usually contain:
 
 - `spec_id`
 - `name`
@@ -147,12 +146,18 @@ At minimum, a thesis-facing spec should usually contain:
 - `rules`
 - `layout.page_margins` or equivalent page margin coverage
 
-For the `thesis-basic` coverage profile, the expected selectors are:
+## Mixed Checking Mode
 
-- `body.paragraph`
-- `body.heading.level1`
-- `body.heading.level2`
-- `body.heading.level3`
+The system uses a mixed Python/Agent checking approach:
+
+- **Python checker** (`check-thesis`): Fast, deterministic checks for supported selectors
+  - `body.paragraph`, `body.heading.*`, `figure.caption`, `table.caption`
+- **Agent checker** (`agent-check-report`): Semantic matching for complex selectors
+  - `frontmatter.abstract.zh.*`, `frontmatter.keywords.en.*`
+  - `frontmatter.toc.*`, `backmatter.references.*`
+  - `frontmatter.title_page.*`
+
+`check-thesis` outputs `skipped_rules` list which `agent-check-report` consumes.
 
 ## Engineering Boundaries
 
