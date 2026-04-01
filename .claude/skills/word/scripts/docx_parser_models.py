@@ -38,12 +38,22 @@ class StyleFact:
 
 
 @dataclass
+class HeaderFooterFact:
+    type: str  # "header" or "footer"
+    section_index: int
+    paragraphs: list[dict]  # List of paragraph facts
+    text: str = ""  # Combined text
+
+
+@dataclass
 class WordDocumentFacts:
     format: str
     metadata: dict[str, Any]
     layout: dict[str, Any]
     paragraphs: list[ParagraphFact]
     styles: list[StyleFact]
+    headers: list[HeaderFooterFact] = field(default_factory=list)
+    footers: list[HeaderFooterFact] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return to_plain_data(self)

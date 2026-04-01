@@ -18,7 +18,7 @@ libs_path = Path(__file__).parent
 if str(libs_path) not in sys.path:
     sys.path.insert(0, str(libs_path))
 
-from docx_parser_models import ParagraphFact, StyleFact, WordDocumentFacts
+from docx_parser_models import ParagraphFact, StyleFact, WordDocumentFacts, HeaderFooterFact
 
 
 def parse_word_document(path: str | Path) -> WordDocumentFacts:
@@ -31,6 +31,8 @@ def parse_word_document(path: str | Path) -> WordDocumentFacts:
             for index, paragraph in enumerate(document.paragraphs)
         ]
         styles = collect_styles(document)
+        headers = extract_headers_footers(document, "header")
+        footers = extract_headers_footers(document, "footer")
         return WordDocumentFacts(
             format=normalized_format(source_path),
             metadata={
@@ -42,6 +44,8 @@ def parse_word_document(path: str | Path) -> WordDocumentFacts:
             layout=extract_layout(document),
             paragraphs=paragraphs,
             styles=styles,
+            headers=headers,
+            footers=footers,
         )
     finally:
         cleanup()
@@ -149,26 +153,95 @@ def extract_layout(document: Document) -> dict[str, Any]:
     }
 
 
+def extract_headers_footers(document: Document, hf_type: str) -> list[dict]:
+    """提取页眉或页脚内容。
+
+    Args:
+        document: Document 对象
+        hf_type: "header" 或 "footer"
+
+    Returns:
+        HeaderFooterFact 列表
+    """
+    result = []
+    for i, section in enumerate(document.sections):
+        # 获取页眉或页脚 - try primary attribute first
+        hf = getattr(section, f"{hf_type}_part", None)
+        if hf is None:
+            # Fallback to internal attribute (some python-docx versions)
+            hf = getattr(section, f"_{hf_type}", None)
+
+        if hf is None:
+            continue
+
+        paragraphs = []
+        texts = []
+        hf_paragraphs = getattr(hf, "paragraphs", [])
+        for j, para in enumerate(hf_paragraphs):
+            para_text = getattr(para, "text", "")
+            if para_text:
+                para_text = para_text.strip()
+            if para_text:
+                texts.append(para_text)
+            paragraphs.append({
+                "index": j,
+                "text": para_text,
+                "style_name": getattr(getattr(para, "style", None), "name", None),
+            })
+
+        if paragraphs or texts:
+            result.append({
+                "type": hf_type,
+                "section_index": i,
+                "paragraphs": paragraphs,
+                "text": " | ".join(texts),
+            })
+
+    return result
+
+
 def extract_paragraph_properties(paragraph) -> tuple[dict[str, Any], dict[str, str]]:
     properties: dict[str, Any] = {}
     property_sources: dict[str, str] = {}
     fmt = paragraph.paragraph_format
     style_properties = extract_style_properties(paragraph.style)
 
-    assign_property(properties, property_sources, "alignment", normalize_alignment(first_present(paragraph.alignment, style_properties.get("alignment"))), "direct" if paragraph.alignment is not None else "style")
+    assign_property(properties, property_sources, "alignment",
+                    normalize_alignment(first_present(paragraph.alignment,
+                                   style_properties.get("alignment"))),
+                    "direct" if paragraph.alignment is not None else "style")
 
     line_spacing_mode, line_spacing_value = normalize_line_spacing(
         first_present(fmt.line_spacing_rule, style_properties.get("line_spacing_rule")),
         first_present(fmt.line_spacing, style_properties.get("line_spacing")),
     )
-    assign_property(properties, property_sources, "line_spacing_mode", line_spacing_mode, "direct" if fmt.line_spacing_rule is not None or fmt.line_spacing is not None else "style")
-    assign_property(properties, property_sources, "line_spacing_value", line_spacing_value, "direct" if fmt.line_spacing is not None else "style")
+    assign_property(properties, property_sources, "line_spacing_mode", line_spacing_mode,
+                    "direct" if fmt.line_spacing_rule is not None or fmt.line_spacing is not None else "style")
+    assign_property(properties, property_sources, "line_spacing_value", line_spacing_value,
+                    "direct" if fmt.line_spacing is not None else "style")
 
-    assign_property(properties, property_sources, "space_before_pt", length_to_pt(first_present(fmt.space_before, style_properties.get("space_before"))), "direct" if fmt.space_before is not None else "style")
-    assign_property(properties, property_sources, "space_after_pt", length_to_pt(first_present(fmt.space_after, style_properties.get("space_after"))), "direct" if fmt.space_after is not None else "style")
+    assign_property(properties, property_sources, "space_before_pt",
+                    length_to_pt(first_present(fmt.space_before, style_properties.get("space_before"))),
+                    "direct" if fmt.space_before is not None else "style")
+    assign_property(properties, property_sources, "space_after_pt",
+                    length_to_pt(first_present(fmt.space_after, style_properties.get("space_after"))),
+                    "direct" if fmt.space_after is not None else "style")
 
-    font_family = first_present(detect_font_from_runs(paragraph), style_properties.get("font_family"))
-    assign_property(properties, property_sources, "font_family", font_family, "direct" if detect_font_from_runs(paragraph) else "style")
+    # 中英文字体分离提取
+    run_fonts = detect_font_from_runs_detailed(paragraph)
+    style_fonts = extract_style_fonts_detailed(paragraph.style)
+
+    # 中文字体 (eastAsia)
+    font_family_east_asia = first_present(run_fonts.get("font_family_east_asia"), style_fonts.get("font_family_east_asia"), style_properties.get("font_family"))
+    assign_property(properties, property_sources, "font_family_east_asia", font_family_east_asia, "direct" if run_fonts.get("font_family_east_asia") else "style")
+
+    # 英文字体 (ascii)
+    font_family_ascii = first_present(run_fonts.get("font_family_ascii"), style_fonts.get("font_family_ascii"), style_properties.get("font_family"))
+    assign_property(properties, property_sources, "font_family_ascii", font_family_ascii, "direct" if run_fonts.get("font_family_ascii") else "style")
+
+    # 保留 font_family 用于向后兼容（优先中文）
+    font_family = font_family_east_asia or font_family_ascii
+    assign_property(properties, property_sources, "font_family", font_family, "direct" if font_family else "style")
 
     font_size_pt = first_present(detect_font_size_from_runs(paragraph), style_properties.get("font_size_pt"))
     assign_property(properties, property_sources, "font_size_pt", font_size_pt, "direct" if detect_font_size_from_runs(paragraph) else "style")
@@ -198,10 +271,18 @@ def extract_style_properties(style) -> dict[str, Any]:
 
     properties: dict[str, Any] = {}
     for current_style in style_chain(style):
+        # 使用详细字体提取
+        style_fonts = extract_style_fonts_detailed(current_style)
+        if style_fonts["font_family_east_asia"]:
+            properties["font_family_east_asia"] = style_fonts["font_family_east_asia"]
+        if style_fonts["font_family_ascii"]:
+            properties["font_family_ascii"] = style_fonts["font_family_ascii"]
+
+        # 保留单一 font_family 用于向后兼容
         style_font = getattr(current_style, "font", None)
         if style_font is not None:
             font_name = first_present(style_font.name, extract_style_font_name(current_style))
-            if font_name is not None:
+            if font_name is not None and "font_family" not in properties:
                 properties["font_family"] = font_name
             if style_font.size is not None:
                 properties["font_size_pt"] = round(style_font.size.pt, 2)
@@ -234,6 +315,7 @@ def style_chain(style) -> list[Any]:
 
 
 def extract_style_font_name(style) -> str | None:
+    """Extract a single font name from style for backward compatibility."""
     element = getattr(style, "_element", None)
     if element is None or getattr(element, "rPr", None) is None:
         return None
@@ -247,12 +329,68 @@ def extract_style_font_name(style) -> str | None:
     return None
 
 
+def extract_style_fonts_detailed(style) -> dict[str, str | None]:
+    """Extract separate fonts for Chinese and Latin text from style."""
+    result = {"font_family_east_asia": None, "font_family_ascii": None}
+
+    element = getattr(style, "_element", None)
+    if element is None or getattr(element, "rPr", None) is None:
+        return result
+
+    fonts = element.rPr.rFonts
+    if fonts is not None:
+        east_asia = fonts.get(qn(f"w:eastAsia"))
+        ascii_font = fonts.get(qn(f"w:ascii"))
+        if east_asia:
+            result["font_family_east_asia"] = east_asia
+        if ascii_font:
+            result["font_family_ascii"] = ascii_font
+
+    return result
+
+
 def detect_font_from_runs(paragraph) -> str | None:
+    """Detect font from runs, returning a single font name for backward compatibility."""
     for run in paragraph.runs:
         font_name = extract_run_font_name(run)
         if font_name:
             return font_name
     return None
+
+
+def detect_font_from_runs_detailed(paragraph) -> dict[str, str | None]:
+    """Detect fonts from runs, returning separate fonts for Chinese and Latin text."""
+    result = {"font_family_east_asia": None, "font_family_ascii": None}
+    last_run = None
+
+    for run in paragraph.runs:
+        last_run = run
+        r_pr = getattr(run._element, "rPr", None)
+        if r_pr is None or r_pr.rFonts is None:
+            continue
+
+        fonts = r_pr.rFonts
+        if not result["font_family_east_asia"]:
+            value = fonts.get(qn("w:eastAsia"))
+            if value:
+                result["font_family_east_asia"] = value
+        if not result["font_family_ascii"]:
+            value = fonts.get(qn("w:ascii"))
+            if value:
+                result["font_family_ascii"] = value
+
+        # Early exit if both fonts found
+        if result["font_family_east_asia"] and result["font_family_ascii"]:
+            break
+
+    # Fallback to run.font.name if no explicit font found
+    if last_run is not None:
+        if not result["font_family_ascii"] and last_run.font.name:
+            result["font_family_ascii"] = last_run.font.name
+        if not result["font_family_east_asia"] and last_run.font.name:
+            result["font_family_east_asia"] = last_run.font.name
+
+    return result
 
 
 def detect_font_size_from_runs(paragraph) -> float | None:
