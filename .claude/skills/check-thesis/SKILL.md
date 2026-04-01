@@ -1,6 +1,6 @@
 ---
 name: check-thesis
-description: 基于 spec.json 检查论文格式合规性。作为 workflow skill 编排解析、比对和报告验收。
+description: 基于 spec.json 中的 rules 检查论文格式合规性。作为 workflow skill 编排解析、比对和报告验收。
 ---
 
 # check-thesis
@@ -12,7 +12,7 @@ description: 基于 spec.json 检查论文格式合规性。作为 workflow skil
 本 skill 是格式检查的 workflow 层，负责：
 
 - 调用 `parse-word` 获取结构事实
-- 根据 spec 执行规则比对
+- 根据 `spec.json` 中的 `rules` 执行规则比对
 - 产出 `report.json` 和 Markdown 报告
 - 调用 `validate-report` 做最终验收
 
