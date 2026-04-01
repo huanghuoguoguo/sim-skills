@@ -4,19 +4,17 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
 
+# Add shared libs to sys.path
+libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
+if str(libs_dir) not in sys.path:
+    sys.path.insert(0, str(libs_dir))
 
-def resolve_path(path_str: str) -> str:
-    """Resolve a path, supporting glob patterns."""
-    matched = glob.glob(path_str)
-    if matched:
-        return matched[0]
-    return path_str
+from spec_validation import resolve_path
 
 # Add word skill scripts to sys.path
 word_scripts = Path(__file__).parent.parent.parent / "word" / "scripts"
@@ -102,7 +100,14 @@ def get_paragraphs_by_selector(thesis_facts, selector: str, rule_id: str = ""):
                 if p.style_name and p.style_name.lower() in ("normal", "正文", "body")]
 
     if selector.startswith("body.heading."):
-        level = selector.split(".")[-1]
+        level_token = selector.split(".")[-1]
+        level_map = {
+            "level1": "1",
+            "level2": "2",
+            "level3": "3",
+            "level4": "4",
+        }
+        level = level_map.get(level_token, level_token)
         return [p for p in thesis_facts.paragraphs
                 if p.style_name and (f"heading {level}" in p.style_name.lower() or f"标题{level}" in p.style_name)]
     if selector.startswith("abstract"):
@@ -117,13 +122,48 @@ def get_paragraphs_by_selector(thesis_facts, selector: str, rule_id: str = ""):
     if selector.startswith("figure.caption"):
         return [p for p in thesis_facts.paragraphs
                 if p.style_name and ("caption" in p.style_name.lower() or "题注" in p.style_name)]
+    if selector.startswith("table.caption"):
+        return [p for p in thesis_facts.paragraphs
+                if p.style_name and ("caption" in p.style_name.lower() or "题注" in p.style_name)]
     return []
 
 
-def check_rule(rule: dict, thesis_facts) -> list[Issue]:
-    """检查单条规则。"""
-    issues = []
+SUPPORTED_SELECTORS = [
+    "body.paragraph",
+    "body.heading.level1",
+    "body.heading.level2",
+    "body.heading.level3",
+    "body.heading.level4",
+    "body.heading.level5",
+    "figure.caption",
+    "table.caption",
+]
+
+
+def is_selector_supported(selector: str) -> bool:
+    """判断 selector 是否被当前 Python 程序支持。"""
+    if selector in SUPPORTED_SELECTORS:
+        return True
+    # 支持 prefix 匹配
+    for s in SUPPORTED_SELECTORS:
+        if selector.startswith(s):
+            return True
+    return False
+
+
+def check_rule(rule: dict, thesis_facts) -> tuple[list[Issue], bool]:
+    """检查单条规则。
+
+    返回：
+        (issues, skipped) - issues 是问题列表，skipped 表示是否被跳过
+    """
     selector = rule.get("selector", "")
+
+    # 不支持的 selector 直接跳过
+    if not is_selector_supported(selector):
+        return [], True
+
+    issues = []
     properties = rule.get("properties", {})
     rule_id = rule.get("id", "unknown")
     severity = rule.get("severity", "major")
@@ -157,7 +197,7 @@ def check_rule(rule: dict, thesis_facts) -> list[Issue]:
                 )
                 issues.append(issue)
 
-    return issues
+    return issues, False
 
 
 def generate_report(issues: list[Issue], thesis_path: str, spec_name: str) -> str:
@@ -233,11 +273,18 @@ def main():
 
     # Check rules
     issues = []
+    skipped_rules = []
     for rule in spec_data.get("rules", []):
         if not rule.get("enabled", True):
             continue
-        rule_issues = check_rule(rule, thesis_facts)
+        rule_issues, skipped = check_rule(rule, thesis_facts)
         issues.extend(rule_issues)
+        if skipped:
+            skipped_rules.append({
+                "rule_id": rule.get("id", "unknown"),
+                "selector": rule.get("selector", ""),
+                "reason": "selector not supported by Python checker (reserved for Agent/human review)",
+            })
 
     # Build report
     report = generate_report(issues, thesis_path, spec_data.get("name", "Unknown Spec"))
@@ -254,6 +301,7 @@ def main():
             "info": len([i for i in issues if i.severity == "info"]),
         },
         "issues": [i.to_dict() for i in issues],
+        "skipped_rules": skipped_rules,
     }
 
     # Output JSON

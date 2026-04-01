@@ -10,7 +10,12 @@ libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
 if str(libs_dir) not in sys.path:
     sys.path.insert(0, str(libs_dir))
 
-from spec_validation import load_json_file, validate_spec_coverage, validate_spec_structure
+from spec_validation import (
+    load_json_file,
+    validate_spec_coverage,
+    validate_spec_consumability,
+    validate_spec_structure,
+)
 
 def main():
     parser = argparse.ArgumentParser(description="Validate JSON spec with structure and coverage checks")
@@ -19,6 +24,11 @@ def main():
         "--profile",
         default="thesis-basic",
         help="Coverage profile to apply (default: thesis-basic)",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Enable strict mode: enforce supported selectors and properties",
     )
     args = parser.parse_args()
 
@@ -31,6 +41,7 @@ def main():
     errors = []
     errors.extend(validate_spec_structure(spec_data))
     errors.extend(validate_spec_coverage(spec_data, profile=args.profile))
+    errors.extend(validate_spec_consumability(spec_data, strict=args.strict))
 
     if errors:
         print("\n❌ VALIDATION FAILED")

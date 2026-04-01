@@ -7,30 +7,52 @@ from pathlib import Path
 
 THESIS_COVERAGE_PROFILES = {
     "thesis-basic": {
-        "required_selectors": [
-            "body.paragraph",
-            "body.heading.level1",
-            "body.heading.level2",
-            "body.heading.level3",
-        ],
-        "require_layout": True,
-    },
-    "thesis-extended": {
-        "required_selectors": [
-            "body.paragraph",
-            "body.heading.level1",
-            "body.heading.level2",
-            "body.heading.level3",
-            "abstract.body",
-            "figure.caption",
-            "table.caption",
-        ],
-        "require_layout": True,
-    },
+        "required_selectors": [],  # 不再强制要求特定 selector，交给 Agent 判断
+        "require_layout": False,   # 不再强制要求 layout
+    }
 }
 
 ALLOWED_ALIGNMENTS = {"left", "center", "right", "justify"}
 ALLOWED_SEVERITIES = {"critical", "major", "minor", "info"}
+SUPPORTED_SELECTORS = {
+    "body.paragraph",
+    "body.heading.level1",
+    "body.heading.level2",
+    "body.heading.level3",
+    "figure.caption",
+    "table.caption",
+}
+SUPPORTED_PROPERTIES = {
+    "font_family_zh",
+    "font_family_en",
+    "font_family",
+    "font_family_ascii",
+    "font_family_east_asia",
+    "font_size_pt",
+    "alignment",
+    "line_spacing_pt",
+    "line_spacing_mode",
+    "line_spacing_value",
+    "space_before_pt",
+    "space_after_pt",
+    "first_line_indent_pt",
+    "first_line_indent_chars",
+    "bold",
+    "italic",
+    "font_weight",
+    "leader",
+    "numbering_format",
+    "label_bold",
+    "label_font_family",
+    "label_font_size_pt",
+    "content_font_family",
+    "content_font_size_pt",
+    "indent_per_level_chars",
+    "page_margin_top_cm",
+    "page_margin_bottom_cm",
+    "page_margin_left_cm",
+    "page_margin_right_cm",
+}
 
 
 def resolve_path(path_str: str) -> str:
@@ -61,8 +83,7 @@ def validate_spec_structure(spec: object) -> list[str]:
     if rules is None:
         return errors
     if not isinstance(rules, list):
-        errors.append("'rules' must be a list of rule objects.")
-        return errors
+        return ["'rules' must be a list of rule objects."]
 
     seen_ids: set[str] = set()
     for index, rule in enumerate(rules):
@@ -84,21 +105,21 @@ def validate_spec_structure(spec: object) -> list[str]:
         properties = rule.get("properties")
         if properties is None:
             errors.append(f"Rule {rule_id or index} is missing 'properties'.")
-        elif not isinstance(properties, dict):
+            continue
+        if not isinstance(properties, dict):
             errors.append(f"Rule {rule_id or index} has non-object 'properties'.")
-        else:
-            for property_name, value in properties.items():
-                if property_name == "alignment" and value not in ALLOWED_ALIGNMENTS:
-                    errors.append(
-                        f"Rule {rule_id or index} has invalid alignment '{value}'. "
-                        f"Use one of: {sorted(ALLOWED_ALIGNMENTS)}."
-                    )
+            continue
 
-                if property_name.endswith("_pt") or property_name.endswith("_cm"):
-                    if not isinstance(value, (int, float)):
-                        errors.append(
-                            f"Rule {rule_id or index} property '{property_name}' must be numeric."
-                        )
+        for property_name, value in properties.items():
+            if property_name == "alignment" and value not in ALLOWED_ALIGNMENTS:
+                errors.append(
+                    f"Rule {rule_id or index} has invalid alignment '{value}'. "
+                    f"Use one of: {sorted(ALLOWED_ALIGNMENTS)}."
+                )
+            if (property_name.endswith("_pt") or property_name.endswith("_cm")) and not isinstance(value, (int, float)):
+                errors.append(
+                    f"Rule {rule_id or index} property '{property_name}' must be numeric."
+                )
 
         severity = rule.get("severity")
         if severity is not None and severity not in ALLOWED_SEVERITIES:
@@ -171,6 +192,62 @@ def validate_spec_coverage(spec: object, profile: str = "thesis-basic") -> list[
     return errors
 
 
+def validate_spec_consumability(spec: object, strict: bool = False) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(spec, dict):
+        return ["Root element must be an object."]
+
+    rules = spec.get("rules", [])
+    if not isinstance(rules, list):
+        return ["'rules' must be a list before consumability can be checked."]
+
+    # strict=False 时只检查基本形状，不限制 selector 和 property 的具体内容
+    for index, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            errors.append(f"Rule at index {index} must be an object.")
+            continue
+
+        rule_id = rule.get("id", index)
+        selector = rule.get("selector")
+
+        if not selector:
+            errors.append(f"Rule {rule_id} is missing 'selector'.")
+            continue
+
+        # 非严格模式下，只检查 selector 是否为字符串，不限制具体值
+        if not isinstance(selector, str):
+            errors.append(f"Rule {rule_id} has non-string 'selector'.")
+            continue
+
+        # 非严格模式下，如果 selector 不在预定义列表中，只输出警告不报错
+        if strict and selector not in SUPPORTED_SELECTORS:
+            errors.append(
+                f"Rule {rule_id} uses unsupported selector '{selector}'. "
+                f"Supported selectors: {sorted(SUPPORTED_SELECTORS)}."
+            )
+
+        properties = rule.get("properties", {})
+        if not isinstance(properties, dict):
+            errors.append(f"Rule {rule_id} has non-object 'properties'.")
+            continue
+
+        # 非严格模式下，不检查 property 是否在预定义列表中
+        if strict:
+            for property_name, value in properties.items():
+                if property_name not in SUPPORTED_PROPERTIES:
+                    errors.append(
+                        f"Rule {rule_id} uses unsupported property '{property_name}'. "
+                        "Move the explanation to spec.md instead of spec.json."
+                    )
+                    continue
+                if isinstance(value, (dict, list)):
+                    errors.append(
+                        f"Rule {rule_id} property '{property_name}' must be scalar in spec.json."
+                    )
+
+    return errors
+
+
 def validate_report_structure(report: object) -> list[str]:
     errors: list[str] = []
     if not isinstance(report, dict):
@@ -184,14 +261,18 @@ def validate_report_structure(report: object) -> list[str]:
     if issues is None:
         return errors
     if not isinstance(issues, list):
-        errors.append("'issues' must be a list.")
-        return errors
+        return ["'issues' must be a list."]
 
     issue_count = report.get("issue_count")
     if isinstance(issue_count, int) and issue_count != len(issues):
         errors.append(
             f"'issue_count' ({issue_count}) does not match actual issues length ({len(issues)})."
         )
+
+    # skipped_rules 是可选字段，用于记录被跳过的规则
+    skipped_rules = report.get("skipped_rules")
+    if skipped_rules is not None and not isinstance(skipped_rules, list):
+        errors.append("'skipped_rules' must be a list.")
 
     severity_summary = report.get("issues_by_severity")
     if severity_summary is not None and isinstance(severity_summary, dict):
