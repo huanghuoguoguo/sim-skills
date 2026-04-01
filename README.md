@@ -38,24 +38,28 @@ Agent 根据 workflow 指示，按需调用多个 skills：
 
 ## 当前 skill 角色
 
-仓库里已有的技能可以先理解为这几类：
+仓库里当前已经落地的技能可以按这几类理解：
 
-- `word`
-  当前是基础服务聚合层，内部已经包含 `parse`、`query_text`、`query_style`、`render_page` 这些原子能力
+- `parse-word` / `query-word-text` / `query-word-style` / `render-word-page`
+  已落地的 primitive skills
+- `validate-spec-structure` / `validate-spec-coverage` / `validate-report`
+  已落地的 gate skills
 - `extract-spec`
-  当前是一个 workflow skill，已经体现出 agentic workflow
-- `validate-spec`
-  当前是一个 gate skill
+  当前是 workflow skill
 - `check-thesis`
-  当前是一个成品 workflow，后续应继续拆细
+  当前是 workflow skill
+- `infer-spec-fragment` / `merge-spec-fragments`
+  当前先以 analysis skill 定义存在，后续还可以继续补脚本实现
+- `validate-spec`
+  兼容入口，内部语义已经等价于 structure + coverage 双重校验
 - `compare-docs`
-  当前是一个分析型/工作流混合 skill
+  当前是分析型/工作流混合 skill
 - `read-text`
   通用辅助 skill
+- `word`
+  兼容聚合层，保留旧脚本路径
 
-## 下一步规划
-
-推荐把 skill 体系收敛成一张明确的 graph，而不是继续围绕少数“大技能”堆功能。
+## 当前已落地的分层
 
 ### 1. Primitive Skills
 
