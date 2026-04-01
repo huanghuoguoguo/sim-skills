@@ -6,3 +6,5 @@ fixtures/
 report.json
 report.md
 spec.json
+*.docx
+*.dotm

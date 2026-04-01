@@ -2,152 +2,127 @@
 
 ## 1. MVP 目标
 
-验证两件事：
+MVP 不是验证“固定 3 个 skills 是否能跑”，而是验证：
 
-- 用户提供模板/成品文档后，系统能提取出可用的 schema
-- 用户确认 schema 后，系统能对待检查文档输出可理解的问题报告
+- agent 能否基于 skill graph 自主完成 spec 提取闭环
+- agent 能否基于同一套 graph 完成文档检查闭环
 
-MVP 不追求"覆盖所有格式规则"，只追求"用最少能力打穿一个真实场景"。
+MVP 不追求规则覆盖最全，只追求把一条真实论文场景打穿，并证明这种 skill 分层是可持续扩展的。
 
 ## 2. MVP 范围
 
-### 2.1 只支持
+### 2.1 支持
 
-- 输入文档：`.docx`
-- 场景：高校论文/毕业设计类文档
-- 输出：schema JSON + 检查报告 Markdown/JSON
-- 执行模式：先 `extract-schema`，后 `check-format`
+- 输入文档：`.docx`、`.dotm`
+- 场景：高校论文 / 毕业设计类文档
+- 输出：`spec.json`、`report.json`、`report.md`
+- 执行模式：workflow skill 编排下层 skills
 
 ### 2.2 不支持
 
-- PDF 作为待检查对象
+- PDF 作为主检查对象
 - 自动修复文档
-- 页眉页脚的复杂节切换逻辑
+- 页面级精确分页判断
 - 公式、文本框、图形对象的精细检查
-- 参考文献内容合规性
 
-## 3. MVP 规则覆盖
+## 3. MVP 最小 skill graph
 
-首版只覆盖高频且易判定的规则：
+### 3.1 Primitive
+
+- `parse-word`
+- `query-word-text`
+- `query-word-style`
+- `render-word-page`
+
+### 3.2 Analysis
+
+- `infer-spec-fragment`
+- `merge-spec-fragments`
+
+### 3.3 Gate
+
+- `validate-spec-structure`
+- `validate-spec-coverage`
+
+### 3.4 Workflow
+
+- `extract-spec`
+- `check-thesis`
+
+## 4. MVP 规则覆盖
+
+首版只覆盖高频、易判定、且能从模板中稳定提取的规则：
 
 - 页边距
-- 正文字体（中文/英文）
+- 正文字体
 - 正文字号
 - 正文行距
 - 正文首行缩进
 - 正文段前段后距
-- 一级/二级/三级标题样式
+- 一级 / 二级 / 三级标题样式
 - 图题样式
 - 表题样式
 
-## 4. MVP 架构
-
-```
-技能层（.claude/skills）
-├── extract-schema：提取 schema
-├── check-format：检查格式
-└── inspect-word：解析 docx
-
-资源层（skills/resources）
-├── inspector.py：文档解析
-├── extractor.py：schema 提取
-└── checker.py：格式检查
-```
-
 ## 5. MVP 数据流
 
-### 5.1 Schema 提取流程
+### 5.1 Spec 提取
 
 ```
-用户输入：模板.docx, 成品.docx
-     ↓
-inspect-word 解析
-     ↓
-Document IR（段落、样式、属性）
-     ↓
-extract-schema 合并规则
-     ↓
-schema.json 输出
+模板.docx / 成品.docx
+    ↓
+parse-word
+    ↓
+DocumentIR
+    ↓
+query-word-text / query-word-style / render-word-page
+    ↓
+spec fragments
+    ↓
+merge-spec-fragments
+    ↓
+spec.json
+    ↓
+validate-spec-structure / validate-spec-coverage
 ```
 
-### 5.2 格式检查流程
+### 5.2 文档检查
 
 ```
-用户输入：待检查.docx + schema.json
-     ↓
-inspect-word 解析
-     ↓
-Document IR
-     ↓
-check-format 比对规则
-     ↓
-report.md + report.json 输出
+待检查.docx + spec.json
+    ↓
+parse-word
+    ↓
+DocumentIR
+    ↓
+rule matching / selector routing
+    ↓
+report.json
+    ↓
+report.md
 ```
 
-## 6. MVP Schema 示例
+## 6. MVP Schema 目标
 
-```json
-{
-  "spec_id": "demo-university-undergrad-v1",
-  "version": "0.1.0",
-  "rules": [
-    {
-      "id": "body-font",
-      "selector": "body.paragraph",
-      "properties": {
-        "font_family_zh": "宋体",
-        "font_size_pt": 12
-      }
-    },
-    {
-      "id": "body-spacing",
-      "selector": "body.paragraph",
-      "properties": {
-        "line_spacing_pt": 20,
-        "first_line_indent_chars": 2
-      }
-    },
-    {
-      "id": "figure-caption",
-      "selector": "figure.caption",
-      "properties": {
-        "font_family_zh": "宋体",
-        "font_size_pt": 9,
-        "alignment": "center"
-      }
-    }
-  ]
-}
-```
+MVP 只要求 schema 能稳定表达：
 
-## 7. MVP 检查报告示例
+- 顶层 `Spec`
+- `rules`
+- 少量稳定 selector
+- 10 到 15 个高频 properties
 
-```markdown
-# 格式检查报告
+schema 先服务 checker 与 gate，不追求一次性覆盖所有学校差异。
 
-## 总览
-- 检查规则：10 条
-- 符合：8 条
-- 不符合：2 条
+## 7. MVP 成功标准
 
-## 问题列表
+- 至少有一套真实模板能通过 workflow 生成可用 `spec.json`
+- gate skills 能指出缺失 selector 或结构问题
+- 样本文档能稳定发现主要格式问题
+- workflow 更换或新增下层 skill 时，不需要整体推翻设计
 
-### [major] 正文字体不符
-- 规则：body-font
-- 期望：宋体
-- 实际：微软雅黑
-- 位置：第 3 段
+## 8. 设计判断
 
-### [minor] 图题未居中
-- 规则：figure-caption
-- 期望：center
-- 实际：left
-- 位置：图 1-1
-```
+这版 MVP 的关键不是“有没有更多功能”，而是：
 
-## 8. MVP 成功标准
-
-- 能处理至少 3 套不同学校模板
-- 每套模板都能生成可用 schema
-- schema 确认后，样本论文能稳定找出主要格式问题
-- 代码以 skill 形式被 Claude Code 调用
+- 是否已经把能力拆成可重组的 skill
+- workflow 是否只负责 orchestration
+- gate 是否真的形成闭环

@@ -1,132 +1,109 @@
 # sim-skills
 
-基于 Claude Code Skills 的文档格式检查工具集，提供两条核心能力：
+面向 Claude Code 的文档格式检查 skill 规划仓库。
 
-1. **Schema 提取**：从模板/成品文档中自动提取结构化格式规则
-2. **格式检查**：基于已有 schema 检查文档是否合规
+这个项目的目标不是做一个写死流程的“小应用”，而是沉淀一组**可编排的细粒度 skills**，让 agent 按 workflow 自主选择、组合、校验和回退。
 
-## 目标使用方式
+## 核心思路
 
-只需要告诉 Claude Code：
+围绕论文/文档格式场景，skills 不再只按“提取 schema / 检查格式”两个成品能力组织，而是按能力层次组织：
 
-- 自己的目的（提取 schema / 检查格式）
-- 文件在哪里
-- 哪些是模板/成品文档，哪些是待检查文档
+1. **Primitive Skills**
+   负责读取、查询、渲染、抽取底层事实。
+2. **Analysis Skills**
+   负责从事实中推断 section、候选规则、差异和 spec 片段。
+3. **Gate Skills**
+   负责结构校验、覆盖校验、质量验收，形成闭环。
+4. **Workflow Skills**
+   只负责编排，不把完整流程硬编码在单个脚本里。
 
-Claude Code 会自动调用相应的 skill 完成工作。
-
-## 两条主线
-
-### 主线一：Schema 提取
-
-```
-输入：模板.docx + 成品.docx
-输出：schema.json
-```
-
-从学校提供的模板或学长学姐的成品论文中，自动提取字体、字号、行距、缩进等格式规则，输出可复用的 schema JSON 文件。
-
-### 主线二：格式检查
+## 目标形态
 
 ```
-输入：待检查.docx + schema.json
-输出：report.md + report.json
+用户目标
+  ↓
+workflow skill
+  ↓
+primitive / analysis / gate skills
+  ↓
+artifacts（DocumentIR / spec fragment / spec.json / report.json）
 ```
 
-基于已有 schema，检查待检查文档的格式合规性，输出结构化的问题报告。
+Agent 根据 workflow 指示，按需调用多个 skills：
 
-## 已实现能力
+- 需要底层结构时，调用解析类 skill
+- 需要定位规范文本时，调用检索类 skill
+- 需要处理页面观感冲突时，调用渲染类 skill
+- 需要收敛成 spec 时，调用合成与校验类 skill
 
-- 解析 `.docx`/`.dotm` 文件，提取段落、样式、字体、间距等属性
-- 从模板/成品文档中提取格式规则，生成 schema JSON（支持样式 XML + AI 文本分析）
-- 基于 schema 对文档进行格式合规检查
-- 输出可读的 Markdown 报告和结构化 JSON 报告
+## 当前 skill 角色
 
-## 目录结构
+仓库里已有的技能可以先理解为这几类：
 
-```
-.claude/skills/          # Claude Code 技能目录
-├── word/                # Word 文档解析基础服务
-├── extract-spec/        # Schema 提取（样式 XML + AI 文本分析）
-├── check-thesis/        # 格式检查（基于 spec 检查合规性）
-├── compare-docs/        # 文档比对（两份文档的格式差异）
-└── read-text/           # 文本文件读取工具
+- `word`
+  当前是基础服务聚合层，内部已经包含 `parse`、`query_text`、`query_style`、`render_page` 这些原子能力
+- `extract-spec`
+  当前是一个 workflow skill，已经体现出 agentic workflow
+- `validate-spec`
+  当前是一个 gate skill
+- `check-thesis`
+  当前是一个成品 workflow，后续应继续拆细
+- `compare-docs`
+  当前是一个分析型/工作流混合 skill
+- `read-text`
+  通用辅助 skill
 
-docs/                    # 设计文档
-└── 00-背景与机会.md ...
+## 下一步规划
 
-fixtures/                # 测试样本
-```
+推荐把 skill 体系收敛成一张明确的 graph，而不是继续围绕少数“大技能”堆功能。
 
-## 使用方式
+### 1. Primitive Skills
 
-**直接在 Claude Code 中对话即可完成工作**，无需手动运行命令。
+- `parse-word`
+- `query-word-text`
+- `query-word-style`
+- `render-word-page`
+- `read-text`
 
-只需要告诉 Claude Code：
+### 2. Analysis Skills
 
-| 目的 | 示例指令 |
-|------|----------|
-| 提取 schema | `帮我从模板文档中提取论文格式规范` |
-| 检查格式 | `用这个 schema 检查我的论文格式是否符合要求` |
-| 解析文档 | `分析一下这个 Word 文档的结构` |
-| 比对文档 | `比对这两份文档的格式差异` |
+- `infer-section-types`
+- `infer-spec-fragment`
+- `merge-spec-fragments`
+- `compare-doc-layout`
 
-Claude Code 会自动调用相应的 skill 完成工作。
+### 3. Gate Skills
 
-## 输出示例
+- `validate-spec-structure`
+- `validate-spec-coverage`
+- `validate-report`
 
-### Schema JSON
+### 4. Workflow Skills
 
-```json
-{
-  "spec_id": "spec-tjut-thesis",
-  "version": "0.1.0",
-  "rules": [
-    {
-      "id": "rule-body-paragraph",
-      "selector": "body.paragraph",
-      "properties": {
-        "font_family_zh": "宋体",
-        "font_size_pt": 10.5,
-        "line_spacing_pt": 20.0,
-        "first_line_indent_chars": 2
-      },
-      "severity": "major"
-    }
-  ]
-}
-```
+- `extract-spec`
+- `check-thesis`
+- `compare-docs`
 
-### 检查报告
+## Skill 设计约束
 
-```markdown
-# 格式检查报告
+每个 skill 在定义时都应明确：
 
-## 总览
-- 检查规则：10 条
-- 符合：8 条
-- 不符合：2 条
+- 输入 artifact 是什么
+- 输出 artifact 是什么
+- 适合在什么阶段调用
+- 调完后通常接哪个 skill
+- 失败或不确定时如何升级或回退
 
-## 问题列表
+这比“某个脚本能不能跑”更重要，因为真正的目标是让 agent 稳定编排。
 
-### [major] 正文字体不符
-- 规则：body-font
-- 期望：宋体
-- 实际：微软雅黑
-- 位置：第 3 段
-```
+## 当前范围
 
-## 工程边界
+- 主场景：高校论文 `.docx` / `.dotm`
+- 主目标：抽取规范、检查合规、输出结构化报告
+- 暂不优先：自动修复、PDF 主检查流、复杂公式/图形对象的精细校验
 
-- 支持格式：`.docx`、`.dotm`（Word 模板）
-- 不支持：`.doc`（旧版二进制格式）、`.pdf`
-- 页面级精确判断（如真实页码、跨页元素）暂不支持
-- 复杂表格、公式、图形对象的检查有限
-- 自动修复功能暂未实现
+## 文档
 
-## 开发阶段
-
-当前处于 MVP 阶段，核心能力：
-- Schema 提取流程已打通（样式 XML + AI 文本分析）
-- 格式检查流程已打通
-- 基础规则覆盖（字体、字号、行距、缩进、页边距、标题、题注）
+- [产品设计](docs/01-产品设计.md)
+- [MVP 实施方案](docs/03-MVP实施方案.md)
+- [Spec Schema 草案](docs/04-Spec-Schema草案.md)
