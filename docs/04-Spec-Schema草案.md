@@ -2,30 +2,31 @@
 
 ## 1. 目标
 
-定义 `Spec` 的最小稳定结构，用于：
+定义一份简单、可消费、可维护的 `spec.json`。
 
-- 表达模板或规范的结构化规则
-- 驱动 `schema + document -> 合规检查`
-- 为后续扩展保留演进空间
+约束很明确：
 
-本版不是"最全 schema"，而是 MVP 可执行的最小子集。
+- `spec.json` 给程序和下游 agent 消费
+- 人类可读说明不强塞进 JSON
+- 说明、依据、疑问、待确认项放到同目录下的 `spec.md`
+
+也就是说，最终交付物是一个简单的 spec 包：
+
+```text
+spec/
+└── <spec-id>/
+    ├── spec.json
+    └── spec.md
+```
 
 ## 2. 设计原则
 
-- schema-first：所有 AI 输出必须落在 schema 内
-- engine-friendly：字段能被程序稳定执行
-- versioned：允许规则迭代而不破坏历史结果
-- docx-first：先服务 `.docx`，但命名不绑死在 Word
+- simple-first：先保证简单和可维护
+- machine-consumable：JSON 只保留机器真正要消费的内容
+- human-readable：解释和依据放到 Markdown
+- versioned：允许规则迭代
 
-## 3. v0.1 收敛结论
-
-v0.1 只稳定 3 类对象：
-
-- `Spec`
-- `Rule`
-- `metadata`
-
-## 4. 顶层对象
+## 3. 顶层对象
 
 ```json
 {
@@ -33,69 +34,71 @@ v0.1 只稳定 3 类对象：
   "version": "0.1.0",
   "name": "某大学本科毕业论文格式规范",
   "scope": "undergraduate_thesis",
-  "rules": [],
-  "metadata": {
-    "created_by": "system",
-    "created_at": "2026-03-31T00:00:00Z",
-    "source_files": ["template.docx"]
-  }
+  "source_files": ["template.docx"],
+  "layout": {
+    "page_margins": {
+      "top_cm": 2.54,
+      "bottom_cm": 2.54,
+      "left_cm": 3.0,
+      "right_cm": 2.5
+    }
+  },
+  "rules": []
 }
 ```
 
-## 5. 顶层字段定义
+## 4. 顶层字段定义
 
 - `spec_id`
   全局稳定 ID，不含版本。
 - `version`
-  语义化版本，建议 `major.minor.patch`。
+  语义化版本。
 - `name`
   面向人的名称。
 - `scope`
-  规则适用范围，如 `undergraduate_thesis`。
+  适用范围，例如 `undergraduate_thesis`。
+- `source_files`
+  提取所依据的模板或成品文件。
+- `layout`
+  页面布局的基础信息。
 - `rules`
-  可执行规则列表。
-- `metadata`
-  非执行信息，包含来源文件、创建时间等。
+  当前程序可以直接消费的规则列表。
 
-## 6. `rules`
+## 5. `rules`
 
-### 6.1 Rule 结构
+### 5.1 Rule 结构
 
 ```json
 {
   "id": "body-style",
   "selector": "body.paragraph",
-  "applies_to": "paragraph",
   "properties": {
     "font_family_zh": "宋体",
     "font_size_pt": 12,
     "line_spacing_pt": 20,
-    "first_line_indent_chars": 2
+    "first_line_indent_pt": 24
   },
   "severity": "major"
 }
 ```
 
-### 6.2 Rule 字段定义
+### 5.2 Rule 字段定义
 
 - `id`
   当前 spec 内唯一。
 - `selector`
   目标对象定位语法。
-- `applies_to`
-  枚举：`paragraph | heading | caption | document`
 - `properties`
   需要比较的属性集合。
 - `severity`
-  枚举：`critical | major | minor | info`
+  可选，枚举：`critical | major | minor | info`
 
-## 7. `selector`
+## 6. `selector`
 
-MVP 采用轻量路径式 selector。
+当前只建议在 `spec.json` 中放入程序真正能消费的 selector。
 
-### 7.1 v0.1 允许值
+v0.1 推荐范围：
 
-- `document`
 - `body.paragraph`
 - `body.heading.level1`
 - `body.heading.level2`
@@ -103,14 +106,14 @@ MVP 采用轻量路径式 selector。
 - `figure.caption`
 - `table.caption`
 
-### 7.2 selector 约束
+其他说明性规则：
 
-- selector 只描述目标对象，不内嵌复杂条件
-- selector 的解析必须是确定性的
+- 不要求进 `spec.json`
+- 优先写进 `spec.md`
 
-## 8. `properties`
+## 7. `properties`
 
-### 8.1 v0.1 首批属性
+### 7.1 当前推荐属性
 
 | 字段 | 单位 | 说明 |
 |------|------|------|
@@ -120,57 +123,51 @@ MVP 采用轻量路径式 selector。
 | `bold` | boolean | 加粗 |
 | `italic` | boolean | 斜体 |
 | `alignment` | - | 对齐方式 |
-| `line_spacing_pt` | pt | 行距（固定值） |
+| `line_spacing_pt` | pt | 行距 |
 | `space_before_pt` | pt | 段前距 |
 | `space_after_pt` | pt | 段后距 |
+| `first_line_indent_pt` | pt | 首行缩进 |
 | `first_line_indent_chars` | 字符 | 首行缩进 |
-| `page_margin_top_cm` | cm | 上页边距 |
-| `page_margin_bottom_cm` | cm | 下页边距 |
-| `page_margin_left_cm` | cm | 左页边距 |
-| `page_margin_right_cm` | cm | 右页边距 |
 
-### 8.2 单位约定
+### 7.2 不建议进入 `spec.json` 的内容
 
-- 字号：`pt`
-- 行距：`pt`
-- 段前段后：`pt`
-- 缩进：`pt` 或 `chars`
-- 页边距：`cm`
+这些更适合写进 `spec.md`：
 
-### 8.3 枚举约定
+- 大段说明文字
+- 依据和证据原文
+- 编号规则说明
+- 数量要求
+- 当前程序还不支持的 section 规则
+- 模糊或待确认项
 
-- `alignment`
-  `left | center | right | justify`
+## 8. `spec.md`
 
-## 9. Schema 版本策略
+`spec.md` 是人类可读层。
 
-- `patch`
-  不改变字段语义，仅修正文案或元数据
-- `minor`
-  新增可选字段或新增 rule type
-- `major`
-  改变字段语义、单位或 selector 解释逻辑
+建议包含：
 
-任何一次检查结果都必须绑定：
-- `spec_id`
-- `version`
+- 页面设置摘要
+- 正文/标题/图表题注等规则的人类说明
+- 提取依据
+- 当前不确定项
+- 当前未进入 `spec.json` 的补充规则
 
-## 10. 验证规则
+用户如果要人工修改，优先改 `spec.md`，再让 agent 同步更新 `spec.json`。
 
-schema 校验必须至少保证：
+## 9. 验证规则
 
-- 顶层必填字段存在
-- 所有 rule `id` 唯一
-- 数值型字段单位合法
-- 枚举值合法
+`validate-spec` 至少保证：
 
-## 11. MVP 最小子集
+- 顶层字段存在
+- `rules` 结构合法
+- 最小规则覆盖足够
+- `rules` 中的 selector / property 当前程序可以消费
 
-MVP 实现时，只要求落地以下部分：
+## 10. MVP 最小子集
 
-- 顶层 `Spec`
-- `rules`
-- 10 到 15 个高频属性
-- 轻量 selector 语法
+MVP 只要求：
 
-这版 schema 的目的是保证 parser、checker、extractor 先能对齐同一套结构。
+- 一个简单 `spec.json`
+- 一个同目录的 `spec.md`
+- `rules` 中包含最小可消费规则
+- 先把“可消费”做稳，再逐步扩展
