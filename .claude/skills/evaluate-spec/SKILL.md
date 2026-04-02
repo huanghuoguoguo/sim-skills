@@ -5,87 +5,55 @@ description: 评估 spec.md 的覆盖性、具体性和可执行性，帮助 Age
 
 # evaluate-spec
 
-这个 skill 负责评估 `spec.md` 的质量，不负责把规则重新结构化成 `spec.json`。
+评估 `spec.md` 的质量，不负责把规则重新结构化。
 
-评估结果不是建议性的“看起来不错”，而是一个 gate：
+评估结果是一个 gate：
 
 - `pass`：可以进入用户精校 / 下游检查
-- `needs_revision`：必须退回主提取 Agent 修订
-- `blocked_user_input`：Agent 已尝试多轮，仍需用户裁决
-
-## 目标
-
-确认 `spec.md` 是否：
-
-- 覆盖关键格式要素
-- 表述具体且可执行
-- 单位和术语一致
-- 标注了来源和不确定项
-- 能被下游 `check-thesis` 逐条读懂并检查
+- `needs_revision`：必须退回修订
+- `blocked_user_input`：需用户裁决
 
 ## 评估维度
 
-按下面五项检查：
+1. **覆盖性** — 是否包含页面设置、正文、标题、图题、表题、摘要、参考文献等主题
+2. **具体性** — 规则是否为明确属性和值，而非模糊描述
+3. **一致性** — 单位、字号写法、术语是否统一；不同来源之间是否有冲突
+4. **可追溯性** — 规则是否标明来自哪个文件、样式或说明
+5. **完备性** — 无法确认的项是否进入"待确认项"
 
-1. 覆盖性
-   是否包含页面设置、正文、标题、图题、表题、摘要、参考文献等常见主题。
-2. 具体性
-   规则是否写成明确属性和值，而不是模糊描述。
-3. 一致性
-   单位、字号写法、术语是否统一；不同来源之间是否有冲突未解释。
-4. 可追溯性
-   规则是否尽量标明来自哪个文件、样式或文字说明。
-5. 完备性
-   无法确认的地方是否明确进入“待确认项”。
+## 辅助诊断脚本
 
-## 建议调用的小脚本
+- `scripts/check_structure.py <spec.md>` — 检查核心主题是否覆盖
+- `scripts/check_conflicts.py <spec.md>` — 检查明显内部冲突（如"小四 vs 10.5pt"）
 
-这些脚本只做高信号诊断，不替代 Agent 判断：
+如果仍可访问上游源文件，可进一步做程序化复核：
 
-- `scripts/check_structure.py <spec.md>`
-  - 检查页面设置、正文、标题、摘要、图表、参考文献等核心主题是否覆盖
-- `scripts/check_conflicts.py <spec.md>`
-  - 检查“小四 vs 10.5pt”这类明显内部冲突
+```bash
+# 1. 用 paragraph-stats 采样正文段落
+python3 .claude/skills/paragraph-stats/scripts/run.py <file.docx> \
+  --style-hint normal --min-length 20 --require-body-shape \
+  --output evidence.json
 
-如果评估时仍可访问上游源文件，正文规则建议再加一轮程序化复核：
+# 2. Agent 根据 spec.md 构造正文相关的 check 指令 -> checks.json
 
-- `extract-spec/scripts/collect_body_evidence.py <template.dotm>`
-  - 检查 `spec.md` 中的正文字号、行距、缩进是否与实际正文候选段落主分布一致
-- `scripts/check_body_consistency.py <spec.md> <template.dotm>`
-  - 直接比对 `spec.md` 的正文规则与正文候选段落主分布
-  - 需要排除哪些章节，应由 Agent 通过 `--exclude-text-hint` 传入
-  - 如果默认 thesis profile 不适配当前学校命名，应通过 `--profile-json` 或覆盖参数调整
+# 3. 比对正文规则与实际分布
+python3 .claude/skills/evaluate-spec/scripts/check_body_consistency.py \
+  --evidence evidence.json --checks checks.json
+```
 
-评估 Agent 应读取这些诊断结果，再结合上下文判断：
+## 输出
 
-- 哪些是阻塞项
-- 哪些可以退回主提取 Agent 修复
-- 哪些必须进入“待用户确认项”
+简短评估结果，包含：通过项、缺失项、模糊项、冲突项、建议修改列表。
 
-## 输出方式
+如果存在以下问题应判为 `needs_revision`：
 
-输出一份简短评估结果，至少包含：
-
-- 通过项
-- 缺失项
-- 模糊项
-- 冲突项
-- 建议补充的最小修改列表
-
-如果 `spec.md` 已可用于下游检查，就明确说明“可进入用户精校 / 可进入下游检查”；如果不行，就指出阻塞项。
-
-如果存在下列问题，应至少判为 `needs_revision`：
-
-- 同一规则内部自相矛盾
+- 同一规则内部矛盾
 - 关键主题缺失
-- 规则无法映射到明确的检查范围
-- 待确认项落在关键格式规则上且未解释原因
-- 正文规则只引用默认样式（如 `Normal`），没有实际正文段落证据
-- 默认样式与正文段落主分布冲突，但 `spec.md` 没有解释冲突来源
+- 规则无法映射到明确检查范围
+- 正文规则只引用默认样式，没有实际段落证据
 
 ## 约束
 
-- 不要把评估退化成纯格式检查或 schema 验证
-- 不要要求为了评估而生成 `spec.json`
-- 如果发现遗漏，优先指出缺的规则和缺的证据，不要泛泛而谈
-- 主提取 Agent 与评估 Agent 最多往返 2-3 轮；仍 unresolved 的项转为“待用户确认项”
+- 不要退化成纯格式检查或 schema 验证
+- 发现遗漏时，指出缺的规则和缺的证据，不要泛泛而谈
+- 最多往返 2-3 轮；仍 unresolved 的项转为"待用户确认项"

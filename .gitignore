@@ -8,4 +8,5 @@ report.md
 spec.json
 *.docx
 *.dotm
+*.pdf
 .claude/settings.local.json1
