@@ -1,135 +1,98 @@
 ---
 name: extract-spec
-description: 从模板或成品 Word 文档提取格式规范，输出 spec.json（给程序和 Agent 消费）和 spec.md（给人类阅读）。
+description: 从模板、成品论文和说明文档中提取论文格式规则，输出用户可精校的 spec.md。
 ---
 
 # extract-spec
 
-这个 workflow skill 负责：
+这个 workflow skill 负责把分散的参考材料收敛成一份自然语言规则文档 `spec.md`。
 
-**从文档中全面提取格式特征，输出一个完整、可维护的 spec 包。**
+`spec.md` 是核心产物：
 
-输出建议：
+- 给用户直接审核和修改
+- 给下游 `check-thesis` 直接阅读和消费
+- 不再生成或维护 `spec.json`
 
-```text
-spec/
-└── <spec-id>/
-    ├── spec.json
-    └── spec.md
+## 输入类型
+
+输入通常是以下一种或多种：
+
+- 学校模板：`.docx` / `.dotm`
+- 成品论文：格式示例
+- 说明文档：写明“正文宋体小四”“一级标题居中”等规则
+
+先判断每个文件的角色，再决定取证方式，不要把所有文件都当成同一种来源。
+
+## 工具使用
+
+优先使用这些共享工具：
+
+- `parse-word`：读取段落、样式、页面设置、页眉页脚等结构事实
+- `query-word-style`：核对正文、标题等样式的最终解析值
+- `query-word-text`：检索文档中的格式说明文字
+- `render-word-page`：只在文字、样式、视觉观感冲突时调用
+
+## 工作方式
+
+### 1. 分类来源
+
+- 模板或成品论文：把样式和页面设置当作主要证据
+- 说明文档：把显式文字规则当作主要证据
+- 多个来源冲突时，说明冲突，不要静默覆盖
+
+### 2. 提取规则
+
+至少覆盖这些主题：
+
+- 页面设置：纸张、页边距
+- 正文：中英文字体、字号、行距、缩进、段前段后、对齐
+- 标题：各级标题样式
+- 图题和表题
+- 摘要
+- 参考文献
+- 目录结构
+- 页眉页脚或附录等特殊部分
+
+### 3. 写出 `spec.md`
+
+推荐结构：
+
+```markdown
+# 某大学毕业论文格式规范
+
+## 来源
+- 模板文件：template.dotm
+- 格式说明：guide.docx
+
+## 页面设置
+- 纸张：A4
+- 页边距：上 2.54cm，下 2.54cm，左 3.0cm，右 2.5cm
+
+## 正文
+- 中文字体：宋体
+- 西文字体：Times New Roman
+- 字号：小四（12pt）
+- 行距：1.5 倍行距
+- 首行缩进：2 字符
+
+## 标题
+### 一级标题
+- 中文字体：黑体
+- 字号：三号（16pt）
+
+## 待确认项
+- [ ] 页眉内容待确认
 ```
 
-其中：
+写作要求：
 
-- `spec.json`
-  给程序和下游 Agent 消费，包含所有可结构化的规则
-- `spec.md`
-  给人类阅读、审阅和修改，记录说明、依据、疑问和待确认项
+- 每条规则必须具体可执行，不写“格式规范”“排版合适”这类空话
+- 单位尽量统一：边距用 `cm`，段距用 `pt`，字号写成 `小四（12pt）`
+- 保留来源信息，说明规则来自哪个文件、哪个样式或哪段说明
+- 无法确认的项放进“待确认项”，不要猜
 
-## 提取流程
+## 输出要求
 
-### 1. 读取基础事实
-
-使用这些基础工具：
-
-- `parse-word` - 解析文档结构
-- `query-word-text` - 按关键词检索文本段落
-- `query-word-style` - 查询样式定义
-- `render-word-page` - 仅在需要视觉验证时使用
-
-### 2. 全面提取规则（重要变化）
-
-**不再限制提取范围**。尽可能提取所有格式规则：
-
-**封面/封皮**
-- `frontmatter.title_page.title` - 论文题目
-- `frontmatter.title_page.info` - 学科、专业、作者、导师等
-
-**中英文摘要**
-- `frontmatter.abstract.zh` - 中文摘要
-- `frontmatter.abstract.en` - 英文摘要
-- `frontmatter.keywords.zh` - 中文关键词
-- `frontmatter.keywords.en` - 英文关键词
-
-**目录**
-- `frontmatter.toc.entry` - 目录条目
-
-**正文**
-- `body.paragraph` - 正文段落
-- `body.heading.level1` ~ `level6` - 各级标题
-
-**图表**
-- `body.figure.caption` - 图题
-- `body.table.caption` - 表题
-
-**参考文献**
-- `backmatter.references.entry` - 参考文献条目
-
-**其他**
-- `backmatter.acknowledgements` - 致谢
-- `backmatter.appendix` - 附录
-- `layout.headers` - 页眉
-- `layout.footers` - 页脚
-
-### 3. 写出 `spec.json`
-
-`spec.json` 保持结构化。
-
-推荐形状：
-
-```json
-{
-  "spec_id": "tjut-thesis",
-  "name": "天津理工大学硕士学位论文格式规范",
-  "version": "1.0.0",
-  "source_files": ["template.dotm"],
-  "layout": {
-    "page_size": {"width_cm": 21.0, "height_cm": 29.7},
-    "page_margins": {"top_cm": 2.54, "bottom_cm": 2.54, "left_cm": 3.57, "right_cm": 2.77}
-  },
-  "rules": [
-    {
-      "id": "body-paragraph",
-      "selector": "body.paragraph",
-      "properties": {
-        "font_family": "宋体",
-        "font_family_east_asia": "宋体",
-        "font_family_ascii": "Times New Roman",
-        "font_size_pt": 10.5,
-        "alignment": "justify",
-        "line_spacing_pt": 18.0,
-        "first_line_indent_pt": 24.0
-      },
-      "severity": "major"
-    }
-  ]
-}
-```
-
-规则：
-
-- **全面提取**：不要自我限制，把所有能识别的规则都提取出来
-- **中英文字体分离**：如果底层解析器支持，分别记录 `font_family_east_asia` 和 `font_family_ascii`
-- **非标量属性也可以**：复杂结构如 `numbering` 可以嵌套记录
-- **说明性规则也记录**：如"参考文献不少于 50 篇"，可以用字符串形式记录
-
-### 4. 写出 `spec.md`
-
-`spec.md` 负责承载这些内容：
-
-- 规则的人类可读说明
-- 提取依据（来自模板的原文）
-- 模板中观察到的格式说明
-- 当前不确定项
-- 无法结构化的模糊规则（如"参考文献应符合 GB/T 7714"）
-
-用户如果要人工修改，优先修改 `spec.md`，再让 Agent 同步回 `spec.json`。
-
-### 5. 验证 `spec.json`
-
-最终调用：
-
-```bash
-python3 .claude/skills/validate-spec/scripts/validate.py <spec.json>
-```
-
-验证只检查基本结构和自洽性，不再限制 selector 和 property 的具体内容。
+- 主输出是 `spec.md`
+- 可以附带一段简短自述，说明提取依据、冲突项和待用户确认项
+- 完成后建议立即调用 `evaluate-spec` 做覆盖性和可执行性自评

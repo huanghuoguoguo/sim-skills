@@ -62,15 +62,15 @@ python3 .claude/skills/agent-check-report/scripts/run.py <facts.json> <spec.json
 ├── query-word-style/           # primitive: style query -> normalized style properties
 ├── render-word-page/           # primitive: page -> image
 ├── read-text/                  # primitive: text file/docx text reader
-├── infer-spec-fragment/        # analysis: selector-level rule fragment guidance
-├── merge-spec-fragments/       # analysis: merge fragments into spec draft
-├── validate-report/            # gate: report structure checks
-├── extract-spec/               # workflow: orchestrates spec extraction
-├── check-thesis/               # workflow: orchestrates thesis checking
-├── agent-check-report/         # workflow: checks skipped rules with semantic matching
+├── extract-spec/               # workflow: reference files -> spec.md
+├── evaluate-spec/              # workflow: review spec.md coverage and executability
+├── check-thesis/               # workflow: spec.md + thesis -> report
 ├── compare-docs/               # workflow/analysis: document diff
-├── validate-spec/              # gate: validates spec.json for downstream use
-└── word/                       # compatibility container for legacy low-level scripts
+├── parse-word/                 # capability: parse docx/dotm to structured facts
+├── query-word-text/            # capability: keyword text lookup
+├── query-word-style/           # capability: style lookup with resolved properties
+├── render-word-page/           # capability: render page image for visual review
+└── word/                       # internal shared parser implementation
 ```
 
 ## Architecture
@@ -117,14 +117,12 @@ Notes:
 Preferred sequence:
 
 1. `parse-word`
-2. `check-thesis`
-3. `agent-check-report` (optional, for skipped rules)
-4. `validate-report`
+2. `evaluate-spec`
+3. `check-thesis`
 
 Notes:
 
-- `check-thesis` emits `report.json` plus a Markdown report and `skipped_rules` list
-- `agent-check-report` checks skipped rules using semantic paragraph matching
+- `check-thesis` consumes `spec.md`, emits JSON + Markdown report, and separates Python checks from Agent/manual follow-up
 - Reports should be reviewed as artifacts in the working directory when the user wants manual verification
 
 ## Key Modules
@@ -132,19 +130,13 @@ Notes:
 - `.claude/skills/word/scripts/docx_parser.py` - low-level Word parser (Chinese/English font separation, header/footer extraction)
 - `.claude/skills/word/scripts/docx_parser_models.py` - parser dataclasses (ParagraphFact, StyleFact, HeaderFooterFact)
 - `.claude/skills/query-word-style/scripts/run.py` - normalized style query wrapper
-- `.claude/skills/__libs__/spec_validation.py` - shared gate validation logic
-- `.claude/skills/check-thesis/scripts/run.py` - rule checking implementation with skipped rules support
-- `.claude/skills/agent-check-report/scripts/run.py` - semantic matching for skipped rules
+- `.claude/skills/check-thesis/scripts/translate_spec.py` - `spec.md -> checks` translator
+- `.claude/skills/check-thesis/scripts/batch_check.py` - deterministic batch checker
+- `.claude/skills/check-thesis/scripts/run.py` - workflow wrapper that combines Python checks with Agent/manual follow-up
 
 ## Spec Expectations
 
-At minimum, a thesis-facing `spec.json` should usually contain:
-
-- `spec_id`
-- `name`
-- `version`
-- `rules`
-- `layout.page_margins` or equivalent page margin coverage
+The thesis-facing artifact is `spec.md`, not `spec.json`.
 
 ## Mixed Checking Mode
 

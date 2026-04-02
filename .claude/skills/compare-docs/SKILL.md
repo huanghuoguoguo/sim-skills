@@ -9,17 +9,17 @@ description: 比对两份 Word 文档的格式差异。
 
 ## 设计说明
 
-本 skill 是文档比对的业务逻辑层，**不包含文档解析代码**，而是通过调用底层的 Word 解析服务获取两份文档的数据。
+本 skill 是文档比对的业务逻辑层，**不包含文档解析代码**，而是通过调用底层解析能力获取两份文档的数据。
 
 ### 依赖关系
 
 ```
 compare-docs (业务逻辑)
     ↓
-word (解析服务)
+parse-word (共享解析能力)
 ```
 
-当需要解析文档时，应确保 `word` skill 的解析器可用。
+当需要解析文档时，优先使用 `parse-word`，不要把 `word` 当成业务入口。
 
 ## 使用指南
 
@@ -82,4 +82,4 @@ python3 .claude/skills/compare-docs/scripts/run.py <reference_path> <target_path
 ## 相关文件
 
 - 执行脚本：`.claude/skills/compare-docs/scripts/run.py`
-- 依赖服务：`.claude/skills/word/scripts/parse.py`（Word 文档解析）
+- 解析能力：`.claude/skills/parse-word/scripts/run.py`
