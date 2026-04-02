@@ -5,9 +5,9 @@ from pathlib import Path
 import sys
 
 
-legacy_dir = Path(__file__).resolve().parents[2] / "word" / "scripts"
-if str(legacy_dir) not in sys.path:
-    sys.path.insert(0, str(legacy_dir))
+shared_word_scripts = Path(__file__).resolve().parents[2] / "word" / "scripts"
+if str(shared_word_scripts) not in sys.path:
+    sys.path.insert(0, str(shared_word_scripts))
 
 from parse import main
 

@@ -18,7 +18,7 @@ def resolve_path(path_str: str) -> str:
         return matched[0]
     return path_str
 
-# Add word skill scripts to sys.path
+# Add shared Word parser scripts to sys.path
 word_scripts = Path(__file__).parent.parent.parent / "word" / "scripts"
 if str(word_scripts) not in sys.path:
     sys.path.insert(0, str(word_scripts))

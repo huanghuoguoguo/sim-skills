@@ -239,7 +239,7 @@ def extract_paragraph_properties(paragraph) -> tuple[dict[str, Any], dict[str, s
     font_family_ascii = first_present(run_fonts.get("font_family_ascii"), style_fonts.get("font_family_ascii"), style_properties.get("font_family"))
     assign_property(properties, property_sources, "font_family_ascii", font_family_ascii, "direct" if run_fonts.get("font_family_ascii") else "style")
 
-    # 保留 font_family 用于向后兼容（优先中文）
+    # 同时保留单一 font_family，便于简单消费方读取。
     font_family = font_family_east_asia or font_family_ascii
     assign_property(properties, property_sources, "font_family", font_family, "direct" if font_family else "style")
 
@@ -278,7 +278,7 @@ def extract_style_properties(style) -> dict[str, Any]:
         if style_fonts["font_family_ascii"]:
             properties["font_family_ascii"] = style_fonts["font_family_ascii"]
 
-        # 保留单一 font_family 用于向后兼容
+        # 同时保留单一 font_family，便于简单消费方读取。
         style_font = getattr(current_style, "font", None)
         if style_font is not None:
             font_name = first_present(style_font.name, extract_style_font_name(current_style))
@@ -315,7 +315,7 @@ def style_chain(style) -> list[Any]:
 
 
 def extract_style_font_name(style) -> str | None:
-    """Extract a single font name from style for backward compatibility."""
+    """Extract a single font name from style for simple consumers."""
     element = getattr(style, "_element", None)
     if element is None or getattr(element, "rPr", None) is None:
         return None
@@ -350,7 +350,7 @@ def extract_style_fonts_detailed(style) -> dict[str, str | None]:
 
 
 def detect_font_from_runs(paragraph) -> str | None:
-    """Detect font from runs, returning a single font name for backward compatibility."""
+    """Detect a single font name from runs for simple consumers."""
     for run in paragraph.runs:
         font_name = extract_run_font_name(run)
         if font_name:
