@@ -1,310 +1,198 @@
 #!/usr/bin/env python3
-"""check-thesis skill - Check thesis against a spec."""
+"""Workflow wrapper for thesis checking with spec.md + batch_check."""
 
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add shared libs to sys.path
-libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
-if str(libs_dir) not in sys.path:
-    sys.path.insert(0, str(libs_dir))
+from batch_check import run_batch_check
+from translate_spec import parse_spec_markdown
 
-from spec_validation import resolve_path
 
-# Add word skill scripts to sys.path
-word_scripts = Path(__file__).parent.parent.parent / "word" / "scripts"
+word_scripts = Path(__file__).resolve().parents[2] / "word" / "scripts"
 if str(word_scripts) not in sys.path:
     sys.path.insert(0, str(word_scripts))
 
 from docx_parser import parse_word_document
-from docx_parser_models import ParagraphFact
 
 
-class Issue:
-    def __init__(self, rule_id: str, severity: str, location: dict = None,
-                 expected: dict = None, actual: dict = None,
-                 message: str = "", fixable: bool = False):
-        self.rule_id = rule_id
-        self.severity = severity
-        self.location = location or {}
-        self.expected = expected or {}
-        self.actual = actual or {}
-        self.message = message
-        self.fixable = fixable
-
-    def to_dict(self) -> dict:
-        return {
-            "rule_id": self.rule_id, "severity": self.severity,
-            "location": self.location, "expected": self.expected,
-            "actual": self.actual, "message": self.message,
-            "fixable": self.fixable,
-        }
+def resolve_path(path_str: str) -> str:
+    matched = glob.glob(path_str)
+    if matched:
+        return matched[0]
+    return path_str
 
 
-def values_match(expected, actual) -> bool:
-    """判断期望值和实际值是否匹配。"""
-    if expected is None:
-        return True
+def build_semantic_results(items: list[dict]) -> list[dict]:
+    results = []
+    for item in items:
+        results.append(
+            {
+                "id": item["id"],
+                "section": item["section"],
+                "rule_text": item["rule_text"],
+                "line_number": item["line_number"],
+                "status": "agent_required",
+                "source": "Agent 判断",
+                "expected": item["rule_text"],
+                "actual": None,
+                "reason": item.get("reason"),
+            }
+        )
+    return results
 
-    # alignment 特殊处理：支持枚举值和字符串互转
-    alignment_map = {
-        0: "left",
-        1: "center",
-        2: "right",
-        3: "justify",
-        "left": 0,
-        "center": 1,
-        "right": 2,
-        "justify": 3,
+
+def build_manual_results(items: list[dict]) -> list[dict]:
+    results = []
+    for item in items:
+        results.append(
+            {
+                "id": item["id"],
+                "section": item["section"],
+                "rule_text": item["rule_text"],
+                "line_number": item["line_number"],
+                "status": "manual_required",
+                "source": "待人工确认",
+                "expected": item["rule_text"],
+                "actual": None,
+                "reason": item.get("reason"),
+            }
+        )
+    return results
+
+
+def build_summary(batch_result: dict, semantic_results: list[dict], manual_results: list[dict]) -> dict:
+    deterministic = batch_result["summary"]
+    return {
+        "total_items": deterministic["total"] + len(semantic_results) + len(manual_results),
+        "deterministic_pass": deterministic["pass"],
+        "deterministic_fail": deterministic["fail"],
+        "deterministic_unresolved": deterministic["unresolved"],
+        "agent_required": len(semantic_results),
+        "manual_required": len(manual_results),
     }
-    if isinstance(expected, (int, str)) and isinstance(actual, (int, str)):
-        exp_val = alignment_map.get(expected, expected)
-        act_val = alignment_map.get(actual, actual)
-        if exp_val == act_val:
-            return True
-
-    # 数值比较（允许一定误差）
-    if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-        return abs(expected - actual) < 0.5
-
-    # 字符串比较（忽略大小写）
-    if isinstance(expected, str) and isinstance(actual, str):
-        return expected.lower() == actual.lower()
-
-    # 其他类型直接比较
-    return expected == actual
 
 
-def get_paragraphs_by_selector(thesis_facts, selector: str, rule_id: str = ""):
-    """根据 selector 获取段落。
+def format_issue_lines(issues: list[dict]) -> list[str]:
+    lines: list[str] = []
+    for issue in issues:
+        location = issue.get("location", {})
+        location_text = ""
+        if "paragraph_index" in location:
+            location_text = f"段落 #{location['paragraph_index']}"
+            if location.get("style_name"):
+                location_text += f"（{location['style_name']}）"
+        elif location.get("scope") == "document.layout":
+            location_text = "页面设置"
+        else:
+            location_text = "未定位"
 
-    rule_id 用于从规则 ID 中提取样式名信息，以便更精确匹配。
-    """
-    # 尝试从 rule_id 中提取样式名（如 style-a -> a）
-    style_id_hint = None
-    if rule_id and rule_id.startswith("style-"):
-        style_id_hint = rule_id[6:]  # 去掉 "style-" 前缀
-
-    if selector == "body.paragraph":
-        # 如果有样式 ID 提示，只匹配该样式的段落
-        if style_id_hint:
-            return [p for p in thesis_facts.paragraphs
-                    if p.style_id == style_id_hint or (p.style_name and p.style_name.lower() in ("normal", "正文", "body"))]
-        # 否则返回所有使用正文样式的段落
-        return [p for p in thesis_facts.paragraphs
-                if p.style_name and p.style_name.lower() in ("normal", "正文", "body")]
-
-    if selector.startswith("body.heading."):
-        level_token = selector.split(".")[-1]
-        level_map = {
-            "level1": "1",
-            "level2": "2",
-            "level3": "3",
-            "level4": "4",
-        }
-        level = level_map.get(level_token, level_token)
-        return [p for p in thesis_facts.paragraphs
-                if p.style_name and (f"heading {level}" in p.style_name.lower() or f"标题{level}" in p.style_name)]
-    if selector.startswith("abstract"):
-        return [p for p in thesis_facts.paragraphs
-                if p.style_name and ("abstract" in p.style_name.lower() or "摘要" in p.style_name)]
-    if selector.startswith("toc"):
-        return [p for p in thesis_facts.paragraphs
-                if p.style_name and ("toc" in p.style_name.lower() or "目录" in p.style_name)]
-    if selector.startswith("references"):
-        return [p for p in thesis_facts.paragraphs
-                if p.style_name and ("reference" in p.style_name.lower() or "bibliography" in p.style_name.lower() or "参考文献" in p.style_name)]
-    if selector.startswith("figure.caption"):
-        return [p for p in thesis_facts.paragraphs
-                if p.style_name and ("caption" in p.style_name.lower() or "题注" in p.style_name)]
-    if selector.startswith("table.caption"):
-        return [p for p in thesis_facts.paragraphs
-                if p.style_name and ("caption" in p.style_name.lower() or "题注" in p.style_name)]
-    return []
+        lines.append(f"- {issue.get('message', '不符合要求')}")
+        lines.append(f"  期望：{issue.get('expected')}")
+        lines.append(f"  实际：{issue.get('actual')}")
+        lines.append(f"  定位：{location_text}")
+    return lines
 
 
-SUPPORTED_SELECTORS = [
-    "body.paragraph",
-    "body.heading.level1",
-    "body.heading.level2",
-    "body.heading.level3",
-    "body.heading.level4",
-    "body.heading.level5",
-    "figure.caption",
-    "table.caption",
-]
-
-
-def is_selector_supported(selector: str) -> bool:
-    """判断 selector 是否被当前 Python 程序支持。"""
-    if selector in SUPPORTED_SELECTORS:
-        return True
-    # 支持 prefix 匹配
-    for s in SUPPORTED_SELECTORS:
-        if selector.startswith(s):
-            return True
-    return False
-
-
-def check_rule(rule: dict, thesis_facts) -> tuple[list[Issue], bool]:
-    """检查单条规则。
-
-    返回：
-        (issues, skipped) - issues 是问题列表，skipped 表示是否被跳过
-    """
-    selector = rule.get("selector", "")
-
-    # 不支持的 selector 直接跳过
-    if not is_selector_supported(selector):
-        return [], True
-
-    issues = []
-    properties = rule.get("properties", {})
-    rule_id = rule.get("id", "unknown")
-    severity = rule.get("severity", "major")
-    message_template = rule.get("message_template", "")
-
-    paragraphs = get_paragraphs_by_selector(thesis_facts, selector, rule_id)
-
-    for para in paragraphs:
-        # 跳过空段落（没有实际内容）
-        if not para.text.strip():
-            continue
-
-        for prop_name, expected_value in properties.items():
-            actual_value = para.properties.get(prop_name)
-            if actual_value is None:
-                continue
-            if not values_match(expected_value, actual_value):
-                issue = Issue(
-                    rule_id=rule_id,
-                    severity=severity,
-                    location={
-                        "paragraph_index": para.index,
-                        "paragraph_id": para.id,
-                        "style_name": para.style_name,
-                        "text_preview": para.text[:50] if para.text else "",
-                    },
-                    expected={prop_name: expected_value},
-                    actual={prop_name: actual_value},
-                    message=f"{message_template} 属性 '{prop_name}' 期望值：{expected_value}, 实际值：{actual_value}",
-                    fixable=True,
-                )
-                issues.append(issue)
-
-    return issues, False
-
-
-def generate_report(issues: list[Issue], thesis_path: str, spec_name: str) -> str:
+def generate_markdown_report(
+    thesis_path: str,
+    spec_title: str,
+    batch_result: dict,
+    semantic_results: list[dict],
+    manual_results: list[dict],
+    summary: dict,
+) -> str:
     lines = [
         "# 论文格式检查报告",
         "",
         f"**论文**: {Path(thesis_path).name}",
-        f"**规范**: {spec_name}",
+        f"**规范**: {spec_title}",
         f"**检查时间**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "",
-        "## 总计",
+        "## 总览",
         "",
-        f"共发现 **{len(issues)}** 个问题。",
+        f"- 确定性规则通过：{summary['deterministic_pass']}",
+        f"- 确定性规则失败：{summary['deterministic_fail']}",
+        f"- 确定性规则未决：{summary['deterministic_unresolved']}",
+        f"- 待 Agent 判断：{summary['agent_required']}",
+        f"- 待人工确认：{summary['manual_required']}",
         "",
     ]
 
-    by_severity = {"critical": [], "major": [], "minor": [], "info": []}
-    for issue in issues:
-        by_severity.get(issue.severity, by_severity["info"]).append(issue)
-
-    if by_severity["critical"]:
-        lines.append("## 严重问题")
-        lines.append("")
-        for i, issue in enumerate(by_severity["critical"], 1):
-            lines.append(f"{i}. {issue.message}")
-            lines.append(f"   - 位置：段落 #{issue.location.get('paragraph_index', '?')}")
+    failed_results = [result for result in batch_result["results"] if result["status"] in {"fail", "unresolved"}]
+    if failed_results:
+        lines.extend(["## Python 检查结果", ""])
+        for result in failed_results:
+            lines.append(f"### {result['rule_text']}")
             lines.append("")
-
-    if by_severity["major"]:
-        lines.append("## 主要问题")
-        lines.append("")
-        for i, issue in enumerate(by_severity["major"], 1):
-            lines.append(f"{i}. {issue.message}")
+            lines.append(f"- 检查结果：{'不通过' if result['status'] == 'fail' else '待人工确认'}")
+            lines.append(f"- 来源：{result['source']}")
+            lines.append(f"- 期望值：{result['expected']}")
+            lines.append(f"- 实际值：{result['actual']}")
+            lines.extend(format_issue_lines(result["issues"]))
             lines.append("")
+    else:
+        lines.extend(["## Python 检查结果", "", "所有已翻译的确定性规则均通过。", ""])
 
-    if by_severity["minor"]:
-        lines.append("## 轻微问题")
+    if semantic_results:
+        lines.extend(["## 待 Agent 判断", ""])
+        for result in semantic_results:
+            lines.append(f"- {result['rule_text']}")
+            lines.append(f"  来源：{result['source']}")
+            lines.append(f"  原因：{result.get('reason')}")
         lines.append("")
-        for i, issue in enumerate(by_severity["minor"], 1):
-            lines.append(f"{i}. {issue.message}")
-            lines.append("")
 
-    if by_severity["info"]:
-        lines.append("## 提示信息")
+    if manual_results:
+        lines.extend(["## 待人工确认", ""])
+        for result in manual_results:
+            lines.append(f"- {result['rule_text']}")
+            lines.append(f"  来源：{result['source']}")
+            if result.get("reason"):
+                lines.append(f"  原因：{result['reason']}")
         lines.append("")
-        for i, issue in enumerate(by_severity["info"], 1):
-            lines.append(f"{i}. {issue.message}")
-            lines.append("")
 
-    if not issues:
-        lines.append("恭喜！未发现格式问题。")
-
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip() + "\n"
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Check thesis against a spec")
-    parser.add_argument("thesis", help="Path to thesis .docx file")
-    parser.add_argument("spec", help="Path to spec JSON file")
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Check thesis against spec.md")
+    parser.add_argument("thesis", help="Path to thesis .docx/.dotm")
+    parser.add_argument("spec", help="Path to spec.md")
     parser.add_argument("--output", help="Where to write JSON result")
+    parser.add_argument("--report", help="Where to write Markdown report")
+    parser.add_argument("--checks-output", help="Optional path to save translated checks JSON")
     args = parser.parse_args()
 
-    # Resolve paths (support glob patterns)
     thesis_path = resolve_path(args.thesis)
     spec_path = resolve_path(args.spec)
 
-    # Load spec
-    with open(spec_path, 'r', encoding='utf-8') as f:
-        spec_data = json.load(f)
+    translated = parse_spec_markdown(spec_path)
+    if args.checks_output:
+        Path(args.checks_output).write_text(json.dumps(translated, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # Parse thesis
     thesis_facts = parse_word_document(thesis_path)
-
-    # Check rules
-    issues = []
-    skipped_rules = []
-    for rule in spec_data.get("rules", []):
-        if not rule.get("enabled", True):
-            continue
-        rule_issues, skipped = check_rule(rule, thesis_facts)
-        issues.extend(rule_issues)
-        if skipped:
-            skipped_rules.append({
-                "rule_id": rule.get("id", "unknown"),
-                "selector": rule.get("selector", ""),
-                "reason": "selector not supported by Python checker (reserved for Agent/human review)",
-            })
-
-    # Build report
-    report = generate_report(issues, thesis_path, spec_data.get("name", "Unknown Spec"))
+    batch_result = run_batch_check(thesis_facts, translated["checks"])
+    semantic_results = build_semantic_results(translated["semantic_rules"])
+    manual_results = build_manual_results(translated["manual_rules"])
+    summary = build_summary(batch_result, semantic_results, manual_results)
 
     result = {
         "thesis": thesis_path,
-        "spec": spec_data.get("name", "Unknown"),
+        "spec_path": spec_path,
+        "spec_title": translated["spec_title"],
         "checked_at": datetime.now().isoformat(),
-        "issue_count": len(issues),
-        "issues_by_severity": {
-            "critical": len([i for i in issues if i.severity == "critical"]),
-            "major": len([i for i in issues if i.severity == "major"]),
-            "minor": len([i for i in issues if i.severity == "minor"]),
-            "info": len([i for i in issues if i.severity == "info"]),
-        },
-        "issues": [i.to_dict() for i in issues],
-        "skipped_rules": skipped_rules,
+        "summary": summary,
+        "translation_summary": translated["summary"],
+        "deterministic_results": batch_result["results"],
+        "semantic_results": semantic_results,
+        "manual_results": manual_results,
     }
 
-    # Output JSON
     content = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output:
         Path(args.output).write_text(content, encoding="utf-8")
@@ -312,13 +200,12 @@ def main():
         sys.stdout.write(content)
         sys.stdout.write("\n")
 
-    # Save Markdown report
-    report_path = Path(thesis_path).stem + "_check_report.md"
-    Path(report_path).write_text(report, encoding="utf-8")
+    report_path = Path(args.report) if args.report else Path(thesis_path).with_name(f"{Path(thesis_path).stem}_check_report.md")
+    report = generate_markdown_report(thesis_path, translated["spec_title"], batch_result, semantic_results, manual_results, summary)
+    report_path.write_text(report, encoding="utf-8")
     print(f"Markdown report saved to: {report_path}", file=sys.stderr)
-
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
