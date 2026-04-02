@@ -13,30 +13,12 @@ libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
 if str(libs_dir) not in sys.path:
     sys.path.insert(0, str(libs_dir))
 
+from spec_rules import parse_font_size_signals, parse_heading
 from utils import resolve_path, write_json_output
 
 CM_TO_PT = 28.3464567
 # Word "小四" (12pt) character width, used for "首行缩进 N 字符" conversion
 DEFAULT_CHAR_WIDTH_PT = 10.5
-
-FONT_SIZE_MAP = {
-    "初号": 42.0,
-    "小初": 36.0,
-    "一号": 26.0,
-    "小一": 24.0,
-    "二号": 22.0,
-    "小二": 18.0,
-    "三号": 16.0,
-    "小三": 15.0,
-    "四号": 14.0,
-    "小四": 12.0,
-    "五号": 10.5,
-    "小五": 9.0,
-    "六号": 7.5,
-    "小六": 6.5,
-    "七号": 5.5,
-    "八号": 5.0,
-}
 
 MARGIN_SIDE_MAP = {
     "上边距": "top",
@@ -64,18 +46,6 @@ TITLE_STYLE_MAP = {
     "五级标题": ("Heading 5", ["Heading 5", "标题5", "五级标题", "5级标题"]),
     "六级标题": ("Heading 6", ["Heading 6", "标题6", "六级标题", "6级标题"]),
 }
-
-
-def parse_font_size(value: str) -> tuple[float | None, str]:
-    match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*pt", value, re.IGNORECASE)
-    if match:
-        return float(match.group(1)), value.strip()
-
-    compact = value.strip().replace(" ", "")
-    for name, pt in FONT_SIZE_MAP.items():
-        if name in compact:
-            return pt, value.strip()
-    return None, value.strip()
 
 
 def parse_alignment(value: str) -> str | None:
@@ -140,12 +110,6 @@ def parse_margins(value: str) -> dict[str, float]:
         parsed[side_map[side_label]] = float(margin_value)
     return parsed
 
-
-def parse_heading(line: str) -> tuple[int, str] | None:
-    match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
-    if not match:
-        return None
-    return len(match.group(1)), match.group(2).strip()
 
 
 def parse_bullet(line: str) -> str | None:
@@ -391,7 +355,21 @@ def translate_rule(context: dict, rule_text: str, line_number: int) -> tuple[lis
             checks.append(build_check(base, "font", value, value, scope="ascii"))
             continue
         if normalized_label == "字号":
-            pt_value, display = parse_font_size(value)
+            signals = parse_font_size_signals(value)
+            if signals["conflict"]:
+                manual_rules.append(
+                    {
+                        "id": f"manual-L{line_number}-{segment_index + 1}",
+                        "section": context["name"],
+                        "rule_text": segment,
+                        "line_number": line_number,
+                        "status": "manual_required",
+                        "source": "待人工确认",
+                        "reason": "字号表达存在冲突：" + "；".join(signals["conflict_reasons"]),
+                    }
+                )
+                continue
+            pt_value, display = signals["resolved_pt"], value.strip()
             if pt_value is not None:
                 checks.append(build_check(base, "font_size", pt_value, display))
                 continue

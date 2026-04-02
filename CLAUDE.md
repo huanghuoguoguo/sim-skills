@@ -20,6 +20,7 @@ The current target scenario is `.docx` / `.dotm` thesis formatting.
 - Default output artifacts should be written in the current working directory unless the user explicitly asks for temporary files
 - The upstream artifact is `spec.md` (natural language rules), not `spec.json`
 - Shared utilities live in `.claude/skills/__libs__/utils.py`
+- `evaluate-spec` may call small diagnostic scripts; these are internal gates, not user-facing upstream artifacts
 
 ## Core Commands
 
@@ -42,6 +43,10 @@ python3 .claude/skills/check-thesis/scripts/run.py <thesis.docx> <spec.md> [--ou
 # Translate spec.md to check instructions (standalone)
 python3 .claude/skills/check-thesis/scripts/translate_spec.py <spec.md> [--output checks.json]
 
+# Diagnose obvious spec conflicts / missing sections
+python3 .claude/skills/evaluate-spec/scripts/check_conflicts.py <spec.md>
+python3 .claude/skills/evaluate-spec/scripts/check_structure.py <spec.md>
+
 # Compare two Word documents
 python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx> [--output diff.json]
 ```
@@ -51,12 +56,16 @@ python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx
 ```text
 .claude/skills/
 ├── extract-spec/               # workflow: reference files -> spec.md
-├── evaluate-spec/              # quality: review spec.md coverage and executability
 ├── check-thesis/               # workflow: spec.md + thesis -> report
 │   └── scripts/
 │       ├── run.py              # workflow wrapper
 │       ├── translate_spec.py   # spec.md -> structured checks
-│       └── batch_check.py      # deterministic batch checker
+│       ├── batch_check.py      # deterministic batch checker
+│       └── summarize_results.py # grouped diagnostics for user/Agent consumption
+├── evaluate-spec/              # quality gate on top of spec.md
+│   └── scripts/
+│       ├── check_conflicts.py  # obvious contradictions in natural-language rules
+│       └── check_structure.py  # missing common thesis sections
 ├── compare-docs/               # workflow: document diff
 ├── parse-word/                 # tool: docx/dotm -> DocumentIR
 ├── query-word-text/            # tool: keyword -> matching paragraphs
@@ -65,6 +74,7 @@ python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx
 ├── read-text/                  # tool: text file/docx text reader
 ├── __libs__/                   # shared Python utilities
 │   ├── utils.py                # resolve_path, write_json_output, setup_word_scripts_path
+│   ├── spec_rules.py           # shared spec parsing helpers
 │   └── text_sources.py         # text source reader
 └── word/                       # internal shared parser implementation
     └── scripts/
@@ -121,10 +131,12 @@ Agent reads `check-thesis/SKILL.md` and autonomously:
 
 - `.claude/skills/word/scripts/docx_parser.py` - low-level Word parser (Chinese/English font separation, header/footer extraction)
 - `.claude/skills/word/scripts/docx_parser_models.py` - parser dataclasses (ParagraphFact, StyleFact, HeaderFooterFact)
-- `.claude/skills/__libs__/utils.py` - shared utilities (resolve_path, write_json_output, setup_word_scripts_path)
+- `.claude/skills/__libs__/utils.py` - shared utilities (resolve_path, write_json_output, write_text_output, setup_word_scripts_path)
+- `.claude/skills/__libs__/spec_rules.py` - shared spec parsing helpers (font-size resolution, heading parsing)
 - `.claude/skills/check-thesis/scripts/translate_spec.py` - `spec.md -> checks` translator
 - `.claude/skills/check-thesis/scripts/batch_check.py` - deterministic batch checker
-- `.claude/skills/check-thesis/scripts/run.py` - workflow wrapper combining Python + Agent results
+- `.claude/skills/check-thesis/scripts/summarize_results.py` - compact grouped failures for report / Agent payload
+- `.claude/skills/check-thesis/scripts/run.py` - workflow wrapper combining Python + Agent results and writing artifacts
 
 ## Mixed Checking Mode
 
