@@ -46,6 +46,11 @@ python3 .claude/skills/check-thesis/scripts/translate_spec.py <spec.md> [--outpu
 # Diagnose obvious spec conflicts / missing sections
 python3 .claude/skills/evaluate-spec/scripts/check_conflicts.py <spec.md>
 python3 .claude/skills/evaluate-spec/scripts/check_structure.py <spec.md>
+python3 .claude/skills/evaluate-spec/scripts/check_body_consistency.py <spec.md> <template.dotm>
+python3 .claude/skills/extract-spec/scripts/collect_body_evidence.py <template.dotm> [--exclude-text-hint 摘要]
+
+# Override defaults for another thesis format
+# Most extraction / evaluation scripts accept --profile-json <file.json>
 
 # Compare two Word documents
 python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx> [--output diff.json]
@@ -65,6 +70,7 @@ python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx
 ├── evaluate-spec/              # quality gate on top of spec.md
 │   └── scripts/
 │       ├── check_conflicts.py  # obvious contradictions in natural-language rules
+│       ├── check_body_consistency.py # compare body rules with sampled body paragraphs
 │       └── check_structure.py  # missing common thesis sections
 ├── compare-docs/               # workflow: document diff
 ├── parse-word/                 # tool: docx/dotm -> DocumentIR

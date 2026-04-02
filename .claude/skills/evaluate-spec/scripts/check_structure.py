@@ -12,17 +12,18 @@ if str(libs_dir) not in sys.path:
     sys.path.insert(0, str(libs_dir))
 
 from spec_rules import parse_heading
+from thesis_profiles import load_profile
 from utils import resolve_path, write_json_output
 
 
-SECTION_RULES = {
-    "页面设置": ["页面设置"],
-    "正文": ["正文"],
-    "标题": ["标题"],
-    "摘要": ["摘要"],
-    "图表": ["图", "表"],
-    "参考文献": ["参考文献"],
-}
+def parse_section_rule(value: str) -> tuple[str, list[str]]:
+    if "=" not in value:
+        raise ValueError("section rule must be in the form LABEL=kw1,kw2")
+    label, raw_keywords = value.split("=", 1)
+    keywords = [item.strip() for item in raw_keywords.split(",") if item.strip()]
+    if not label.strip() or not keywords:
+        raise ValueError("section rule must include a label and at least one keyword")
+    return label.strip(), keywords
 
 
 def parse_headings(lines: list[str]) -> list[dict]:
@@ -42,14 +43,14 @@ def parse_headings(lines: list[str]) -> list[dict]:
     return headings
 
 
-def check_structure(path: str | Path) -> dict:
+def check_structure(path: str | Path, section_rules: dict[str, list[str]]) -> dict:
     spec_path = Path(path)
     lines = spec_path.read_text(encoding="utf-8").splitlines()
     headings = parse_headings(lines)
 
     covered = []
     missing = []
-    for section_name, keywords in SECTION_RULES.items():
+    for section_name, keywords in section_rules.items():
         matched = [
             heading for heading in headings
             if any(keyword in heading["text"] for keyword in keywords)
@@ -82,9 +83,27 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Check whether spec.md covers core thesis sections")
     parser.add_argument("spec", help="Path to spec.md")
     parser.add_argument("--output", help="Where to write JSON diagnostics")
+    parser.add_argument("--profile-json", help="Optional JSON file overriding the default thesis profile")
+    parser.add_argument(
+        "--section-rule",
+        action="append",
+        default=[],
+        help="Override required section rule as LABEL=kw1,kw2; repeatable",
+    )
     args = parser.parse_args()
 
-    payload = check_structure(resolve_path(args.spec))
+    overrides = {"evaluate_spec": {}}
+    if args.section_rule:
+        section_rules = {}
+        for item in args.section_rule:
+            label, keywords = parse_section_rule(item)
+            section_rules[label] = keywords
+        overrides["evaluate_spec"]["section_rules"] = section_rules
+    profile = load_profile(args.profile_json, overrides=overrides)
+    payload = check_structure(
+        resolve_path(args.spec),
+        section_rules=profile["evaluate_spec"]["section_rules"],
+    )
     write_json_output(payload, args.output)
     return 0
 

@@ -13,6 +13,7 @@ libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
 if str(libs_dir) not in sys.path:
     sys.path.insert(0, str(libs_dir))
 
+from thesis_profiles import load_profile
 from spec_rules import parse_font_size_signals, parse_heading
 from utils import resolve_path, write_json_output
 
@@ -37,16 +38,6 @@ ALIGNMENT_MAP = {
     "两端对齐": "justify",
     "分散对齐": "distribute",
 }
-
-TITLE_STYLE_MAP = {
-    "一级标题": ("Heading 1", ["Heading 1", "标题1", "一级标题", "1级标题"]),
-    "二级标题": ("Heading 2", ["Heading 2", "标题2", "二级标题", "2级标题"]),
-    "三级标题": ("Heading 3", ["Heading 3", "标题3", "三级标题", "3级标题"]),
-    "四级标题": ("Heading 4", ["Heading 4", "标题4", "四级标题", "4级标题"]),
-    "五级标题": ("Heading 5", ["Heading 5", "标题5", "五级标题", "5级标题"]),
-    "六级标题": ("Heading 6", ["Heading 6", "标题6", "六级标题", "6级标题"]),
-}
-
 
 def parse_alignment(value: str) -> str | None:
     compact = value.strip().replace(" ", "")
@@ -128,57 +119,67 @@ def split_compound_rule(text: str) -> list[str]:
     return colon_parts or [text]
 
 
-def classify_context(headings: list[str]) -> dict:
+def _contains_any(text: str, keywords: list[str]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
+def classify_context(headings: list[str], translate_profile: dict) -> dict:
     normalized = [heading.strip() for heading in headings if heading.strip()]
     joined = " / ".join(normalized)
 
     if not normalized:
         return {"kind": "unknown", "name": joined}
 
-    if any("来源" in heading for heading in normalized):
+    if any(_contains_any(heading, translate_profile["ignored_heading_keywords"]) for heading in normalized):
         return {"kind": "ignored", "name": joined}
-    if any("待确认项" in heading for heading in normalized):
+    if any(_contains_any(heading, translate_profile["manual_heading_keywords"]) for heading in normalized):
         return {"kind": "manual", "name": joined}
-    if any(keyword in joined for keyword in ("摘要", "参考文献", "目录")):
+    if _contains_any(joined, translate_profile["semantic_section_keywords"]):
         return {"kind": "semantic", "name": joined}
-    if any("页面设置" in heading for heading in normalized):
+    if any(_contains_any(heading, translate_profile["layout_section_keywords"]) for heading in normalized):
         return {"kind": "layout", "name": joined}
-    if any("图题" in heading for heading in normalized):
+    if any(_contains_any(heading, translate_profile["figure_caption_heading_keywords"]) for heading in normalized):
+        caption_style = translate_profile["caption_style"]
         return {
             "kind": "paragraph_style",
             "name": joined,
             "selector": "caption:figure",
-            "style_name": "Caption",
-            "style_aliases": ["Caption", "题注", "图题"],
+            "style_name": caption_style["style_name"],
+            "style_aliases": caption_style["figure_aliases"],
+            "caption_prefix_patterns": translate_profile["figure_caption_prefix_patterns"],
         }
-    if any("表题" in heading for heading in normalized):
+    if any(_contains_any(heading, translate_profile["table_caption_heading_keywords"]) for heading in normalized):
+        caption_style = translate_profile["caption_style"]
         return {
             "kind": "paragraph_style",
             "name": joined,
             "selector": "caption:table",
-            "style_name": "Caption",
-            "style_aliases": ["Caption", "题注", "表题"],
+            "style_name": caption_style["style_name"],
+            "style_aliases": caption_style["table_aliases"],
+            "caption_prefix_patterns": translate_profile["table_caption_prefix_patterns"],
         }
 
     deepest = normalized[-1]
-    if deepest in TITLE_STYLE_MAP or any("标题" == heading for heading in normalized):
-        title_heading = next((heading for heading in reversed(normalized) if heading in TITLE_STYLE_MAP), deepest)
-        style_name, aliases = TITLE_STYLE_MAP.get(title_heading, ("Heading 1", ["Heading 1", "标题1", "一级标题"]))
+    title_style_map = translate_profile["title_style_map"]
+    if deepest in title_style_map or any("标题" == heading for heading in normalized):
+        title_heading = next((heading for heading in reversed(normalized) if heading in title_style_map), deepest)
+        title_config = title_style_map.get(title_heading, translate_profile["default_title_style"])
         return {
             "kind": "paragraph_style",
             "name": joined,
-            "selector": f"style:{style_name}",
-            "style_name": style_name,
-            "style_aliases": aliases,
+            "selector": f"style:{title_config['style_name']}",
+            "style_name": title_config["style_name"],
+            "style_aliases": title_config["style_aliases"],
         }
 
-    if any("正文" in heading for heading in normalized):
+    if any(_contains_any(heading, translate_profile["body_section_keywords"]) for heading in normalized):
+        body_selector = translate_profile["body_selector"]
         return {
             "kind": "paragraph_style",
             "name": joined,
-            "selector": "style:Normal",
-            "style_name": "Normal",
-            "style_aliases": ["Normal", "正文", "Body Text", "Body"],
+            "selector": body_selector["selector"],
+            "style_name": body_selector["style_name"],
+            "style_aliases": body_selector["style_aliases"],
         }
 
     return {"kind": "unknown", "name": joined}
@@ -196,6 +197,7 @@ def build_check(base: dict, check_type: str, expected, expected_display: str, **
         "expected_display": expected_display,
         "style_name": base.get("style_name"),
         "style_aliases": base.get("style_aliases", []),
+        "caption_prefix_patterns": base.get("caption_prefix_patterns", []),
     }
     payload.update(extra)
     return payload
@@ -213,6 +215,7 @@ def translate_rule(context: dict, rule_text: str, line_number: int) -> tuple[lis
         "selector": context.get("selector"),
         "style_name": context.get("style_name"),
         "style_aliases": context.get("style_aliases", []),
+        "caption_prefix_patterns": context.get("caption_prefix_patterns", []),
     }
 
     if context["kind"] == "ignored":
@@ -415,6 +418,12 @@ def translate_rule(context: dict, rule_text: str, line_number: int) -> tuple[lis
 
 
 def parse_spec_markdown(path: str | Path) -> dict:
+    return parse_spec_markdown_with_profile(path)
+
+
+def parse_spec_markdown_with_profile(path: str | Path, profile: dict | None = None) -> dict:
+    profile = profile or load_profile()
+    translate_profile = profile["check_thesis"]["translate_spec"]
     spec_path = Path(path)
     lines = spec_path.read_text(encoding="utf-8").splitlines()
 
@@ -441,7 +450,7 @@ def parse_spec_markdown(path: str | Path) -> dict:
             continue
 
         active_headings = [headings[level] for level in sorted(headings)]
-        context = classify_context(active_headings)
+        context = classify_context(active_headings, translate_profile)
         item_checks, item_semantic, item_manual = translate_rule(context, bullet, line_number)
         checks.extend(item_checks)
         semantic_rules.extend(item_semantic)
@@ -465,10 +474,32 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Translate spec.md to deterministic checks")
     parser.add_argument("spec", help="Path to spec.md")
     parser.add_argument("--output", help="Where to write translated checks JSON")
+    parser.add_argument("--profile-json", help="Optional JSON file overriding the default thesis profile")
+    parser.add_argument("--body-section-keyword", action="append", default=[], help="Override body section keyword; repeatable")
+    parser.add_argument("--semantic-section-keyword", action="append", default=[], help="Override semantic section keyword; repeatable")
+    parser.add_argument("--layout-section-keyword", action="append", default=[], help="Override layout section keyword; repeatable")
+    parser.add_argument("--ignored-heading-keyword", action="append", default=[], help="Override ignored heading keyword; repeatable")
+    parser.add_argument("--manual-heading-keyword", action="append", default=[], help="Override manual heading keyword; repeatable")
     args = parser.parse_args()
 
     spec_path = resolve_path(args.spec)
-    payload = parse_spec_markdown(spec_path)
+    overrides = {
+        "check_thesis": {
+            "translate_spec": {},
+        }
+    }
+    translate_overrides = overrides["check_thesis"]["translate_spec"]
+    if args.body_section_keyword:
+        translate_overrides["body_section_keywords"] = args.body_section_keyword
+    if args.semantic_section_keyword:
+        translate_overrides["semantic_section_keywords"] = args.semantic_section_keyword
+    if args.layout_section_keyword:
+        translate_overrides["layout_section_keywords"] = args.layout_section_keyword
+    if args.ignored_heading_keyword:
+        translate_overrides["ignored_heading_keywords"] = args.ignored_heading_keyword
+    if args.manual_heading_keyword:
+        translate_overrides["manual_heading_keywords"] = args.manual_heading_keyword
+    payload = parse_spec_markdown_with_profile(spec_path, profile=load_profile(args.profile_json, overrides=overrides))
     write_json_output(payload, args.output)
     return 0
 

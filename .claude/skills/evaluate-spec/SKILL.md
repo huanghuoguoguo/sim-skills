@@ -47,6 +47,15 @@ description: 评估 spec.md 的覆盖性、具体性和可执行性，帮助 Age
 - `scripts/check_conflicts.py <spec.md>`
   - 检查“小四 vs 10.5pt”这类明显内部冲突
 
+如果评估时仍可访问上游源文件，正文规则建议再加一轮程序化复核：
+
+- `extract-spec/scripts/collect_body_evidence.py <template.dotm>`
+  - 检查 `spec.md` 中的正文字号、行距、缩进是否与实际正文候选段落主分布一致
+- `scripts/check_body_consistency.py <spec.md> <template.dotm>`
+  - 直接比对 `spec.md` 的正文规则与正文候选段落主分布
+  - 需要排除哪些章节，应由 Agent 通过 `--exclude-text-hint` 传入
+  - 如果默认 thesis profile 不适配当前学校命名，应通过 `--profile-json` 或覆盖参数调整
+
 评估 Agent 应读取这些诊断结果，再结合上下文判断：
 
 - 哪些是阻塞项
@@ -71,6 +80,8 @@ description: 评估 spec.md 的覆盖性、具体性和可执行性，帮助 Age
 - 关键主题缺失
 - 规则无法映射到明确的检查范围
 - 待确认项落在关键格式规则上且未解释原因
+- 正文规则只引用默认样式（如 `Normal`），没有实际正文段落证据
+- 默认样式与正文段落主分布冲突，但 `spec.md` 没有解释冲突来源
 
 ## 约束
 

@@ -19,6 +19,10 @@ setup_word_scripts_path(__file__)
 from docx_parser import parse_word_document
 
 A4_SIZE_CM = (21.0, 29.7)
+DEFAULT_CAPTION_PATTERNS = {
+    "caption:figure": [r"^图\s*[0-9一二三四五六七八九十]"],
+    "caption:table": [r"^表\s*[0-9一二三四五六七八九十]"],
+}
 
 
 def normalized(value: str | None) -> str:
@@ -48,18 +52,12 @@ def _select_from_cache(paragraphs: list, check: dict) -> list:
             names.add(style_name)
         return [p for p in paragraphs if normalized(p.style_name) in names]
 
-    if selector == "caption:figure":
+    if selector in {"caption:figure", "caption:table"}:
+        patterns = check.get("caption_prefix_patterns") or DEFAULT_CAPTION_PATTERNS.get(selector, [])
         return [
             p for p in paragraphs
             if normalized(p.style_name) in aliases
-            or re.match(r"^图\s*[0-9一二三四五六七八九十]", p.text)
-        ]
-
-    if selector == "caption:table":
-        return [
-            p for p in paragraphs
-            if normalized(p.style_name) in aliases
-            or re.match(r"^表\s*[0-9一二三四五六七八九十]", p.text)
+            or any(re.match(pattern, p.text) for pattern in patterns)
         ]
 
     return []
