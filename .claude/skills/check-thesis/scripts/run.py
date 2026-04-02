@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import sys
 from datetime import datetime
@@ -13,22 +12,17 @@ from pathlib import Path
 from batch_check import run_batch_check
 from translate_spec import parse_spec_markdown
 
+libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
+if str(libs_dir) not in sys.path:
+    sys.path.insert(0, str(libs_dir))
 
-word_scripts = Path(__file__).resolve().parents[2] / "word" / "scripts"
-if str(word_scripts) not in sys.path:
-    sys.path.insert(0, str(word_scripts))
+from utils import resolve_path, setup_word_scripts_path, write_json_output
 
+setup_word_scripts_path(__file__)
 from docx_parser import parse_word_document
 
 
-def resolve_path(path_str: str) -> str:
-    matched = glob.glob(path_str)
-    if matched:
-        return matched[0]
-    return path_str
-
-
-def build_semantic_results(items: list[dict]) -> list[dict]:
+def build_non_deterministic_results(items: list[dict], status: str, source: str) -> list[dict]:
     results = []
     for item in items:
         results.append(
@@ -37,27 +31,8 @@ def build_semantic_results(items: list[dict]) -> list[dict]:
                 "section": item["section"],
                 "rule_text": item["rule_text"],
                 "line_number": item["line_number"],
-                "status": "agent_required",
-                "source": "Agent 判断",
-                "expected": item["rule_text"],
-                "actual": None,
-                "reason": item.get("reason"),
-            }
-        )
-    return results
-
-
-def build_manual_results(items: list[dict]) -> list[dict]:
-    results = []
-    for item in items:
-        results.append(
-            {
-                "id": item["id"],
-                "section": item["section"],
-                "rule_text": item["rule_text"],
-                "line_number": item["line_number"],
-                "status": "manual_required",
-                "source": "待人工确认",
+                "status": status,
+                "source": source,
                 "expected": item["rule_text"],
                 "actual": None,
                 "reason": item.get("reason"),
@@ -173,12 +148,12 @@ def main() -> int:
 
     translated = parse_spec_markdown(spec_path)
     if args.checks_output:
-        Path(args.checks_output).write_text(json.dumps(translated, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_json_output(translated, args.checks_output)
 
     thesis_facts = parse_word_document(thesis_path)
     batch_result = run_batch_check(thesis_facts, translated["checks"])
-    semantic_results = build_semantic_results(translated["semantic_rules"])
-    manual_results = build_manual_results(translated["manual_rules"])
+    semantic_results = build_non_deterministic_results(translated["semantic_rules"], "agent_required", "Agent 判断")
+    manual_results = build_non_deterministic_results(translated["manual_rules"], "manual_required", "待人工确认")
     summary = build_summary(batch_result, semantic_results, manual_results)
 
     result = {
@@ -193,12 +168,7 @@ def main() -> int:
         "manual_results": manual_results,
     }
 
-    content = json.dumps(result, ensure_ascii=False, indent=2)
-    if args.output:
-        Path(args.output).write_text(content, encoding="utf-8")
-    else:
-        sys.stdout.write(content)
-        sys.stdout.write("\n")
+    write_json_output(result, args.output)
 
     report_path = Path(args.report) if args.report else Path(thesis_path).with_name(f"{Path(thesis_path).stem}_check_report.md")
     report = generate_markdown_report(thesis_path, translated["spec_title"], batch_result, semantic_results, manual_results, summary)

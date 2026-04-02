@@ -4,14 +4,20 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import re
 import sys
 from pathlib import Path
 
+libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
+if str(libs_dir) not in sys.path:
+    sys.path.insert(0, str(libs_dir))
+
+from utils import resolve_path, write_json_output
 
 CM_TO_PT = 28.3464567
+# Word "小四" (12pt) character width, used for "首行缩进 N 字符" conversion
+DEFAULT_CHAR_WIDTH_PT = 10.5
 
 FONT_SIZE_MAP = {
     "初号": 42.0,
@@ -30,6 +36,13 @@ FONT_SIZE_MAP = {
     "小六": 6.5,
     "七号": 5.5,
     "八号": 5.0,
+}
+
+MARGIN_SIDE_MAP = {
+    "上边距": "top",
+    "下边距": "bottom",
+    "左边距": "left",
+    "右边距": "right",
 }
 
 ALIGNMENT_MAP = {
@@ -51,13 +64,6 @@ TITLE_STYLE_MAP = {
     "五级标题": ("Heading 5", ["Heading 5", "标题5", "五级标题", "5级标题"]),
     "六级标题": ("Heading 6", ["Heading 6", "标题6", "六级标题", "6级标题"]),
 }
-
-
-def resolve_path(path_str: str) -> str:
-    matched = glob.glob(path_str)
-    if matched:
-        return matched[0]
-    return path_str
 
 
 def parse_font_size(value: str) -> tuple[float | None, str]:
@@ -93,7 +99,7 @@ def parse_indent(value: str) -> tuple[float | None, str]:
     if char_match:
         chars = float(char_match.group(1))
         # Word 中常见“首行缩进 2 字符”约等于 21pt。
-        return round(chars * 10.5, 2), value.strip()
+        return round(chars * DEFAULT_CHAR_WIDTH_PT, 2), value.strip()
 
     pt_match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*pt", value, re.IGNORECASE)
     if pt_match:
@@ -362,13 +368,7 @@ def translate_rule(context: dict, rule_text: str, line_number: int) -> tuple[lis
                     )
                 continue
 
-            side_map = {
-                "上边距": "top",
-                "下边距": "bottom",
-                "左边距": "left",
-                "右边距": "right",
-            }
-            if label in side_map:
+            if label in MARGIN_SIDE_MAP:
                 margin_match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*cm", value, re.IGNORECASE)
                 if margin_match:
                     checks.append(
@@ -377,7 +377,7 @@ def translate_rule(context: dict, rule_text: str, line_number: int) -> tuple[lis
                             "margin",
                             float(margin_match.group(1)),
                             value,
-                            side=side_map[label],
+                            side=MARGIN_SIDE_MAP[label],
                             selector="document:layout",
                         )
                     )
@@ -491,13 +491,7 @@ def main() -> int:
 
     spec_path = resolve_path(args.spec)
     payload = parse_spec_markdown(spec_path)
-    content = json.dumps(payload, ensure_ascii=False, indent=2)
-
-    if args.output:
-        Path(args.output).write_text(content, encoding="utf-8")
-    else:
-        sys.stdout.write(content)
-        sys.stdout.write("\n")
+    write_json_output(payload, args.output)
     return 0
 
 

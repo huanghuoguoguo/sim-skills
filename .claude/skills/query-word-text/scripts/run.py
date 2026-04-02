@@ -2,24 +2,21 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 shared_word_scripts = Path(__file__).resolve().parents[2] / "word" / "scripts"
 if str(shared_word_scripts) not in sys.path:
     sys.path.insert(0, str(shared_word_scripts))
 
+libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
+if str(libs_dir) not in sys.path:
+    sys.path.insert(0, str(libs_dir))
+
 from docx_parser import parse_word_document
-
-
-def resolve_path(path_str: str) -> str:
-    matched = glob.glob(path_str)
-    if matched:
-        return matched[0]
-    return path_str
+from utils import resolve_path, write_json_output
 
 
 def main() -> int:
@@ -41,11 +38,7 @@ def main() -> int:
                 }
             )
 
-    payload = json.dumps(results, ensure_ascii=False, indent=2)
-    if args.output:
-        Path(args.output).write_text(payload, encoding="utf-8")
-    else:
-        print(payload)
+    write_json_output(results, args.output)
     return 0
 
 

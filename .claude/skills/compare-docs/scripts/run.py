@@ -4,26 +4,21 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
 
+libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
+if str(libs_dir) not in sys.path:
+    sys.path.insert(0, str(libs_dir))
 
-def resolve_path(path_str: str) -> str:
-    """Resolve a path, supporting glob patterns."""
-    matched = glob.glob(path_str)
-    if matched:
-        return matched[0]
-    return path_str
-
-# Add shared Word parser scripts to sys.path
-word_scripts = Path(__file__).parent.parent.parent / "word" / "scripts"
+word_scripts = Path(__file__).resolve().parents[2] / "word" / "scripts"
 if str(word_scripts) not in sys.path:
     sys.path.insert(0, str(word_scripts))
 
 from docx_parser import parse_word_document
+from utils import resolve_path, write_json_output
 
 
 def generate_diff_report(diffs: list, ref_path: str, target_path: str) -> str:
@@ -78,7 +73,6 @@ def main():
     parser.add_argument("--output", help="Where to write JSON result")
     args = parser.parse_args()
 
-    # Resolve paths (support glob patterns)
     ref_path = resolve_path(args.reference)
     target_path = resolve_path(args.target)
 
@@ -87,7 +81,6 @@ def main():
 
     diffs = []
 
-    # Compare paragraph counts
     ref_count = len(ref_facts.paragraphs)
     target_count = len(target_facts.paragraphs)
     if ref_count != target_count:
@@ -99,7 +92,6 @@ def main():
             "message": f"段落数量不一致：参考={ref_count}, 目标={target_count}",
         })
 
-    # Compare layouts
     ref_layout = ref_facts.layout
     target_layout = target_facts.layout
     for key in set(ref_layout.keys()) | set(target_layout.keys()):
@@ -124,15 +116,8 @@ def main():
         "diffs": diffs,
     }
 
-    # Output JSON
-    content = json.dumps(result, ensure_ascii=False, indent=2)
-    if args.output:
-        Path(args.output).write_text(content, encoding="utf-8")
-    else:
-        sys.stdout.write(content)
-        sys.stdout.write("\n")
+    write_json_output(result, args.output)
 
-    # Save Markdown report
     report_path = Path(target_path).stem + "_diff_report.md"
     Path(report_path).write_text(report, encoding="utf-8")
     print(f"Markdown report saved to: {report_path}", file=sys.stderr)

@@ -6,21 +6,20 @@ This file provides guidance to Claude Code when working in this repository.
 
 This repository is a skill-based document formatting checker for Chinese thesis-style Word documents.
 
-The system is organized as a fine-grained skill graph:
+The system follows an **Agent + tool scripts** architecture:
 
-- primitive skills expose deterministic capabilities
-- analysis skills help synthesize rule fragments
-- gate skills validate structure and coverage
-- workflow skills orchestrate the full task
+- **Skill (SKILL.md)** guides the Agent's planning and quality standards
+- **Tool scripts (Python)** handle deterministic work: parsing, querying, batch checking
+- **Agent** orchestrates tools, handles semantic reasoning, and produces final output
 
 The current target scenario is `.docx` / `.dotm` thesis formatting.
 
 ## Working Rules
 
-- Prefer the fine-grained skills under `.claude/skills/` over older direct references to `word/scripts/*`
+- Agent reads the relevant SKILL.md, then autonomously plans and calls tool scripts
 - Default output artifacts should be written in the current working directory unless the user explicitly asks for temporary files
-- Use `validate-spec` before treating a generated `spec.json` as final
-- Prefer outputting a `spec/` folder with `spec.json` and `spec.md`
+- The upstream artifact is `spec.md` (natural language rules), not `spec.json`
+- Shared utilities live in `.claude/skills/__libs__/utils.py`
 
 ## Core Commands
 
@@ -37,119 +36,105 @@ python3 .claude/skills/query-word-style/scripts/run.py <file.docx> --style "Head
 # Render a page for visual review
 python3 .claude/skills/render-word-page/scripts/run.py <file.docx> --page 1 --output page1.png
 
-# Validate spec for downstream consumption
-python3 .claude/skills/validate-spec/scripts/validate.py <spec.json> [--strict]
+# Check thesis against spec.md
+python3 .claude/skills/check-thesis/scripts/run.py <thesis.docx> <spec.md> [--output report.json]
 
-# Check thesis against spec
-python3 .claude/skills/check-thesis/scripts/run.py <thesis.docx> <spec.json> [--output report.json]
-
-# Validate report structure
-python3 .claude/skills/validate-report/scripts/validate.py <report.json>
+# Translate spec.md to check instructions (standalone)
+python3 .claude/skills/check-thesis/scripts/translate_spec.py <spec.md> [--output checks.json]
 
 # Compare two Word documents
 python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx> [--output diff.json]
-
-# Agent-based check for skipped rules
-python3 .claude/skills/agent-check-report/scripts/run.py <facts.json> <spec.json> <report.json> [--output agent_report.json]
 ```
 
 ## Skill Layout
 
 ```text
 .claude/skills/
-├── parse-word/                 # primitive: docx/dotm -> DocumentIR
-├── query-word-text/            # primitive: keyword -> matching paragraphs
-├── query-word-style/           # primitive: style query -> normalized style properties
-├── render-word-page/           # primitive: page -> image
-├── read-text/                  # primitive: text file/docx text reader
 ├── extract-spec/               # workflow: reference files -> spec.md
-├── evaluate-spec/              # workflow: review spec.md coverage and executability
+├── evaluate-spec/              # quality: review spec.md coverage and executability
 ├── check-thesis/               # workflow: spec.md + thesis -> report
-├── compare-docs/               # workflow/analysis: document diff
-├── parse-word/                 # capability: parse docx/dotm to structured facts
-├── query-word-text/            # capability: keyword text lookup
-├── query-word-style/           # capability: style lookup with resolved properties
-├── render-word-page/           # capability: render page image for visual review
+│   └── scripts/
+│       ├── run.py              # workflow wrapper
+│       ├── translate_spec.py   # spec.md -> structured checks
+│       └── batch_check.py      # deterministic batch checker
+├── compare-docs/               # workflow: document diff
+├── parse-word/                 # tool: docx/dotm -> DocumentIR
+├── query-word-text/            # tool: keyword -> matching paragraphs
+├── query-word-style/           # tool: style query -> normalized properties
+├── render-word-page/           # tool: page -> image
+├── read-text/                  # tool: text file/docx text reader
+├── __libs__/                   # shared Python utilities
+│   ├── utils.py                # resolve_path, write_json_output, setup_word_scripts_path
+│   └── text_sources.py         # text source reader
 └── word/                       # internal shared parser implementation
+    └── scripts/
+        ├── docx_parser.py      # low-level Word parser
+        └── docx_parser_models.py
 ```
 
 ## Architecture
 
 ```text
-user goal
-  -> workflow skill
-  -> primitive / analysis / gate skills
-  -> artifacts
+user request
+  -> Agent reads SKILL.md
+  -> Agent plans autonomously
+  -> calls tool scripts (Python) for facts and checks
+  -> Agent reasons over results
+  -> outputs artifacts (spec.md / report)
 ```
 
-Typical artifact flow:
+Two workflows:
 
 ```text
-Word file
-  -> DocumentIR
-  -> spec.json
-  -> spec.md
-  -> report.json / report.md
+Upstream: reference files -> Agent + tools -> spec.md -> user review
+Downstream: thesis + spec.md -> Agent + tools -> check report
 ```
 
 ## Skill Usage Guidance
 
 ### For spec extraction
 
-Preferred sequence:
+Agent reads `extract-spec/SKILL.md` and autonomously:
 
-1. `parse-word`
-2. `query-word-text`
-3. `query-word-style`
-4. `render-word-page` only when visual conflict resolution is needed
-5. write `spec.json`
-6. write `spec.md`
-7. `validate-spec`
+1. Identifies file types (template / exemplar / description)
+2. Calls `parse-word`, `query-word-text`, `query-word-style` to extract facts
+3. Calls `render-word-page` only when visual conflict resolution is needed
+4. Synthesizes rules into `spec.md`
+5. Uses `evaluate-spec` to self-assess completeness
 
 Notes:
 
-- Do not trust a generated spec until `validate-spec` passes
-- Keep `spec.json` simple; move explanations and uncertainty into `spec.md`
+- `spec.md` is the sole upstream artifact — no `spec.json`
 - When structure and visual evidence conflict, prefer programmatic facts first, then text clues, then visual inspection
 
 ### For thesis checking
 
-Preferred sequence:
+Agent reads `check-thesis/SKILL.md` and autonomously:
 
-1. `parse-word`
-2. `evaluate-spec`
-3. `check-thesis`
-
-Notes:
-
-- `check-thesis` consumes `spec.md`, emits JSON + Markdown report, and separates Python checks from Agent/manual follow-up
-- Reports should be reviewed as artifacts in the working directory when the user wants manual verification
+1. Reads `spec.md` rules
+2. Calls `parse-word` to get document facts
+3. Uses `translate_spec.py` + `batch_check.py` for deterministic rules (Python)
+4. Handles semantic rules (abstract, references, TOC) via Agent reasoning
+5. Outputs Markdown report with source annotations
 
 ## Key Modules
 
 - `.claude/skills/word/scripts/docx_parser.py` - low-level Word parser (Chinese/English font separation, header/footer extraction)
 - `.claude/skills/word/scripts/docx_parser_models.py` - parser dataclasses (ParagraphFact, StyleFact, HeaderFooterFact)
-- `.claude/skills/query-word-style/scripts/run.py` - normalized style query wrapper
+- `.claude/skills/__libs__/utils.py` - shared utilities (resolve_path, write_json_output, setup_word_scripts_path)
 - `.claude/skills/check-thesis/scripts/translate_spec.py` - `spec.md -> checks` translator
 - `.claude/skills/check-thesis/scripts/batch_check.py` - deterministic batch checker
-- `.claude/skills/check-thesis/scripts/run.py` - workflow wrapper that combines Python checks with Agent/manual follow-up
-
-## Spec Expectations
-
-The thesis-facing artifact is `spec.md`, not `spec.json`.
+- `.claude/skills/check-thesis/scripts/run.py` - workflow wrapper combining Python + Agent results
 
 ## Mixed Checking Mode
 
-The system uses a mixed Python/Agent checking approach:
+The system uses a mixed Python/Agent approach for thesis checking:
 
-- **Python checker** (`check-thesis`): Fast, deterministic checks for supported selectors
-  - `body.paragraph`, `body.heading.*`, `figure.caption`, `table.caption`
-- **Agent checker** (`agent-check-report`): Semantic matching for complex selectors
-  - `frontmatter.abstract.zh.*`, `frontmatter.keywords.en.*`
-  - `frontmatter.toc.*`, `backmatter.references.*`
-  - `frontmatter.title_page.*`
+- **Python** (`translate_spec.py` + `batch_check.py`): Deterministic checks for font, font size, line spacing, margins, indentation, alignment, heading styles, captions
+- **Agent**: Semantic rules requiring context understanding (abstract format, references, TOC structure)
+- **Manual**: Rules that `translate_spec.py` cannot parse are flagged for human review
 
-`check-thesis` outputs `skipped_rules` list which `agent-check-report` consumes.
+`translate_spec.py` categorizes each spec.md rule into one of three buckets: `checks` (Python), `semantic_rules` (Agent), or `manual_rules` (human).
 
 ## Engineering Boundaries
 

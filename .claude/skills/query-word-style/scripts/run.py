@@ -2,20 +2,24 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 shared_word_scripts = Path(__file__).resolve().parents[2] / "word" / "scripts"
 if str(shared_word_scripts) not in sys.path:
     sys.path.insert(0, str(shared_word_scripts))
 
+libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
+if str(libs_dir) not in sys.path:
+    sys.path.insert(0, str(libs_dir))
+
 from docx_parser import parse_word_document
+from utils import resolve_path, write_json_output
 
 
-ALIGNMENT_MAP = {
+ALIGNMENT_ENUM_MAP = {
     0: "left",
     1: "center",
     2: "right",
@@ -23,13 +27,6 @@ ALIGNMENT_MAP = {
 }
 
 EMU_PER_PT = 12700
-
-
-def resolve_path(path_str: str) -> str:
-    matched = glob.glob(path_str)
-    if matched:
-        return matched[0]
-    return path_str
 
 
 def to_points(value):
@@ -42,8 +39,8 @@ def normalize_properties(properties: dict) -> dict:
     normalized = dict(properties)
 
     alignment = normalized.get("alignment")
-    if alignment in ALIGNMENT_MAP:
-        normalized["alignment"] = ALIGNMENT_MAP[alignment]
+    if alignment in ALIGNMENT_ENUM_MAP:
+        normalized["alignment"] = ALIGNMENT_ENUM_MAP[alignment]
 
     if "space_before" in normalized:
         normalized["space_before_pt"] = to_points(normalized["space_before"])
@@ -84,11 +81,7 @@ def main() -> int:
         print(json.dumps({"error": f"Style containing '{args.style}' not found"}), file=sys.stderr)
         return 1
 
-    payload = json.dumps(results, ensure_ascii=False, indent=2)
-    if args.output:
-        Path(args.output).write_text(payload, encoding="utf-8")
-    else:
-        print(payload)
+    write_json_output(results, args.output)
     return 0
 
 

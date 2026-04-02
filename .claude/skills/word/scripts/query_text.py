@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Query the parsed word document for paragraphs containing a keyword."""
 
+from __future__ import annotations
+
 import argparse
-import glob
-import json
 import sys
 from pathlib import Path
 
@@ -11,13 +11,13 @@ libs_path = Path(__file__).parent
 if str(libs_path) not in sys.path:
     sys.path.insert(0, str(libs_path))
 
-from docx_parser import parse_word_document
+libs_dir = Path(__file__).resolve().parent.parent.parent / "__libs__"
+if str(libs_dir) not in sys.path:
+    sys.path.insert(0, str(libs_dir))
 
-def resolve_path(path_str: str) -> str:
-    matched = glob.glob(path_str)
-    if matched:
-        return matched[0]
-    return path_str
+from docx_parser import parse_word_document
+from utils import resolve_path, write_json_output
+
 
 def main():
     parser = argparse.ArgumentParser(description="Query document text")
@@ -34,7 +34,8 @@ def main():
                 "text": p.text,
                 "style_name": p.style_name
             })
-    print(json.dumps(results, ensure_ascii=False, indent=2))
+    write_json_output(results)
+
 
 if __name__ == "__main__":
     main()

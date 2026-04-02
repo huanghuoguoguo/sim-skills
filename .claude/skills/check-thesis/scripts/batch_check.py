@@ -4,28 +4,21 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import re
 import sys
 from pathlib import Path
 
+libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
+if str(libs_dir) not in sys.path:
+    sys.path.insert(0, str(libs_dir))
 
-word_scripts = Path(__file__).resolve().parents[2] / "word" / "scripts"
-if str(word_scripts) not in sys.path:
-    sys.path.insert(0, str(word_scripts))
+from utils import resolve_path, setup_word_scripts_path, write_json_output
 
+setup_word_scripts_path(__file__)
 from docx_parser import parse_word_document
 
-
 A4_SIZE_CM = (21.0, 29.7)
-
-
-def resolve_path(path_str: str) -> str:
-    matched = glob.glob(path_str)
-    if matched:
-        return matched[0]
-    return path_str
 
 
 def normalized(value: str | None) -> str:
@@ -39,29 +32,34 @@ def values_close(expected: float, actual: float, tolerance: float = 0.5) -> bool
 
 
 def select_paragraphs(facts, check: dict) -> list:
+    non_empty = [p for p in facts.paragraphs if p.text.strip()]
+    return _select_from_cache(non_empty, check)
+
+
+def _select_from_cache(paragraphs: list, check: dict) -> list:
+    """Select paragraphs matching a check's selector, using pre-filtered list."""
     selector = check.get("selector", "")
-    aliases = [normalized(alias) for alias in check.get("style_aliases", []) if alias]
+    aliases = {normalized(alias) for alias in check.get("style_aliases", []) if alias}
     style_name = normalized(check.get("style_name"))
 
-    paragraphs = [paragraph for paragraph in facts.paragraphs if paragraph.text.strip()]
-    if selector == "style:Normal" or selector.startswith("style:"):
+    if selector.startswith("style:"):
         names = set(aliases)
         if style_name:
             names.add(style_name)
-        return [paragraph for paragraph in paragraphs if normalized(paragraph.style_name) in names]
+        return [p for p in paragraphs if normalized(p.style_name) in names]
 
     if selector == "caption:figure":
         return [
-            paragraph for paragraph in paragraphs
-            if normalized(paragraph.style_name) in aliases
-            or re.match(r"^图\s*[0-9一二三四五六七八九十]", paragraph.text)
+            p for p in paragraphs
+            if normalized(p.style_name) in aliases
+            or re.match(r"^图\s*[0-9一二三四五六七八九十]", p.text)
         ]
 
     if selector == "caption:table":
         return [
-            paragraph for paragraph in paragraphs
-            if normalized(paragraph.style_name) in aliases
-            or re.match(r"^表\s*[0-9一二三四五六七八九十]", paragraph.text)
+            p for p in paragraphs
+            if normalized(p.style_name) in aliases
+            or re.match(r"^表\s*[0-9一二三四五六七八九十]", p.text)
         ]
 
     return []
@@ -242,8 +240,40 @@ def build_check_result(check: dict, status: str, actual_display, issues: list[di
     }
 
 
+LAYOUT_CHECK_TYPES = {"margin", "page_size"}
+
+CHECK_DISPATCH = {
+    "font": check_font,
+    "font_size": check_font_size,
+    "alignment": check_alignment,
+    "line_spacing": check_line_spacing,
+}
+
+SPACING_CHECK_TYPES = {
+    "first_line_indent": "first_line_indent_pt",
+    "spacing_before": "space_before_pt",
+    "spacing_after": "space_after_pt",
+}
+
+
+def _selector_key(check: dict) -> tuple:
+    """Build a cache key for paragraph selection grouping."""
+    return (
+        check.get("selector", ""),
+        normalized(check.get("style_name")),
+        tuple(sorted(normalized(a) for a in check.get("style_aliases", []) if a)),
+    )
+
+
 def run_batch_check(facts, checks: list[dict]) -> dict:
     results = []
+
+    # Pre-filter non-empty paragraphs once
+    non_empty_paragraphs = [p for p in facts.paragraphs if p.text.strip()]
+
+    # Cache paragraph selections by selector key to avoid N+1 filtering
+    paragraph_cache: dict[tuple, list] = {}
+
     for check in checks:
         check_type = check.get("type")
         if check_type == "margin":
@@ -253,21 +283,17 @@ def run_batch_check(facts, checks: list[dict]) -> dict:
             results.append(check_page_size(facts, check))
             continue
 
-        paragraphs = select_paragraphs(facts, check)
-        if check_type == "font":
-            results.append(check_font(paragraphs, check))
-        elif check_type == "font_size":
-            results.append(check_font_size(paragraphs, check))
-        elif check_type == "alignment":
-            results.append(check_alignment(paragraphs, check))
-        elif check_type == "line_spacing":
-            results.append(check_line_spacing(paragraphs, check))
-        elif check_type == "first_line_indent":
-            results.append(check_spacing(paragraphs, check, "first_line_indent_pt"))
-        elif check_type == "spacing_before":
-            results.append(check_spacing(paragraphs, check, "space_before_pt"))
-        elif check_type == "spacing_after":
-            results.append(check_spacing(paragraphs, check, "space_after_pt"))
+        # Reuse cached paragraph selection for same selector group
+        key = _selector_key(check)
+        if key not in paragraph_cache:
+            paragraph_cache[key] = _select_from_cache(non_empty_paragraphs, check)
+        paragraphs = paragraph_cache[key]
+
+        handler = CHECK_DISPATCH.get(check_type)
+        if handler:
+            results.append(handler(paragraphs, check))
+        elif check_type in SPACING_CHECK_TYPES:
+            results.append(check_spacing(paragraphs, check, SPACING_CHECK_TYPES[check_type]))
         else:
             results.append(
                 build_check_result(
@@ -322,12 +348,7 @@ def main() -> int:
         **run_batch_check(thesis_facts, checks),
     }
 
-    content = json.dumps(result, ensure_ascii=False, indent=2)
-    if args.output:
-        Path(args.output).write_text(content, encoding="utf-8")
-    else:
-        sys.stdout.write(content)
-        sys.stdout.write("\n")
+    write_json_output(result, args.output)
     return 0
 
 
