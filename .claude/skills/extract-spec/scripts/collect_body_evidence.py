@@ -25,7 +25,9 @@ CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
 def normalized(value: str | None) -> str:
-    return (value or "").strip().lower()
+    if value is None:
+        return ""
+    return re.sub(r"\s+", "", value).lower()
 
 
 def looks_like_heading(text: str, heading_prefix_patterns: tuple[str, ...], heading_keywords: tuple[str, ...]) -> bool:

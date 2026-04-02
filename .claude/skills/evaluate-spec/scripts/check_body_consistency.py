@@ -64,76 +64,52 @@ def check_body_consistency(
     top_east_asia_font = top_east_asia_font_item["value"] if top_east_asia_font_item else None
     top_ascii_font = top_ascii_font_item["value"] if top_ascii_font_item else None
 
+    # Map check types to (expected_value, actual_value, match_test, extra_fields) per type
+    top_values = {
+        "font_size": top_font_size,
+        "line_spacing": top_line_spacing,
+        "first_line_indent": top_indent,
+    }
+    reasons = {
+        "font_size": "正文主字号分布与 spec 不一致。",
+        "line_spacing": "正文主行距分布与 spec 不一致。",
+        "first_line_indent": "正文主缩进分布与 spec 不一致。",
+        "font": "正文主字体分布与 spec 不一致。",
+    }
+
     mismatches = []
     supported = []
     for check in translated["checks"]:
         if not any(keyword in (check.get("section") or "") for keyword in body_section_keywords):
             continue
         check_type = check.get("type")
+        rule_text = check["rule_text"]
 
-        if check_type == "font_size":
+        if check_type in ("font_size", "first_line_indent"):
             expected = check.get("expected")
-            if approx_equal(expected, top_font_size, tolerance=0.2):
-                supported.append({"rule_text": check["rule_text"], "evidence": top_font_size})
+            actual = top_values[check_type]
+            tol = 0.2 if check_type == "font_size" else 1.0
+            if approx_equal(expected, actual, tolerance=tol):
+                supported.append({"rule_text": rule_text, "evidence": actual})
             else:
-                mismatches.append(
-                    {
-                        "rule_text": check["rule_text"],
-                        "type": "font_size",
-                        "expected": expected,
-                        "actual": top_font_size,
-                        "reason": "正文主字号分布与 spec 不一致。",
-                    }
-                )
+                mismatches.append({"rule_text": rule_text, "type": check_type, "expected": expected, "actual": actual, "reason": reasons[check_type]})
         elif check_type == "line_spacing":
             expected = check.get("expected", {})
-            evidence_value = top_line_spacing
             expected_value = f"{expected.get('mode')}:{expected.get('value')}"
-            if evidence_value == expected_value:
-                supported.append({"rule_text": check["rule_text"], "evidence": evidence_value})
+            if top_line_spacing == expected_value:
+                supported.append({"rule_text": rule_text, "evidence": top_line_spacing})
             else:
-                mismatches.append(
-                    {
-                        "rule_text": check["rule_text"],
-                        "type": "line_spacing",
-                        "expected": expected_value,
-                        "actual": evidence_value,
-                        "reason": "正文主行距分布与 spec 不一致。",
-                    }
-                )
-        elif check_type == "first_line_indent":
-            expected = check.get("expected")
-            if approx_equal(expected, top_indent, tolerance=1.0):
-                supported.append({"rule_text": check["rule_text"], "evidence": top_indent})
-            else:
-                mismatches.append(
-                    {
-                        "rule_text": check["rule_text"],
-                        "type": "first_line_indent",
-                        "expected": expected,
-                        "actual": top_indent,
-                        "reason": "正文主缩进分布与 spec 不一致。",
-                    }
-                )
+                mismatches.append({"rule_text": rule_text, "type": "line_spacing", "expected": expected_value, "actual": top_line_spacing, "reason": reasons["line_spacing"]})
         elif check_type == "font":
             scope = check.get("scope", "east_asia")
             evidence_item = top_east_asia_font_item if scope == "east_asia" else top_ascii_font_item
             if evidence_item is None or evidence_item["count"] < 3:
                 continue
-            evidence_value = evidence_item["value"]
-            if evidence_value == check.get("expected"):
-                supported.append({"rule_text": check["rule_text"], "evidence": evidence_value})
+            actual = evidence_item["value"]
+            if actual == check.get("expected"):
+                supported.append({"rule_text": rule_text, "evidence": actual})
             else:
-                mismatches.append(
-                    {
-                        "rule_text": check["rule_text"],
-                        "type": "font",
-                        "scope": scope,
-                        "expected": check.get("expected"),
-                        "actual": evidence_value,
-                        "reason": "正文主字体分布与 spec 不一致。",
-                    }
-                )
+                mismatches.append({"rule_text": rule_text, "type": "font", "scope": scope, "expected": check.get("expected"), "actual": actual, "reason": reasons["font"]})
 
     status = "pass" if not mismatches else "needs_revision"
     return {
