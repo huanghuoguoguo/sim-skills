@@ -1,6 +1,6 @@
 ---
 name: paragraph-stats
-description: 按条件筛选段落并统计属性分布，用于了解文档中某类段落的实际格式特征。
+description: "Use this skill to filter paragraphs by style/content and compute property distributions. Triggers: when you need to know what fonts, sizes, line spacings, or indentations are actually used by a class of paragraphs (e.g., body text, headings). Essential for cross-validating style definitions against actual paragraph properties. Input: facts JSON or .docx, with optional filters (--style-hint, --min-length, --require-body-shape). Output: style/font/size/spacing distributions and sample paragraphs. Do NOT use for single-style property lookup — use query-word-style for that."
 ---
 
 # paragraph-stats

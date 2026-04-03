@@ -1,6 +1,6 @@
 ---
 name: word
-description: Word 解析底层库。新 workflow 应优先调用 parse-word、query-word-text、query-word-style、render-word-page。
+description: "Internal low-level Word parser library. Do NOT call directly from workflows — use the higher-level capability skills instead: parse-word (full document parsing), query-word-text (keyword search), query-word-style (style property query), render-word-page (page rendering). This module provides shared implementation code (docx_parser.py, docx_parser_models.py) consumed by those skills."
 ---
 
 # word

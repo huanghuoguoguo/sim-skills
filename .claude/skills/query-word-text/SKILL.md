@@ -1,6 +1,6 @@
 ---
 name: query-word-text
-description: 在 Word 文档中按关键词检索段落，用于查找格式说明、规范提示和语义线索。
+description: "Use this skill to search for paragraphs in a Word document by keyword. Triggers: when you need to locate specific content like '摘要', '宋体', '参考文献', formatting instructions, or any text pattern inside a .docx file. Returns matching paragraphs with index, style, and context. Do NOT use for style property queries — use query-word-style instead. Do NOT use for full document parsing — use parse-word instead."
 ---
 
 # query-word-text

@@ -1,6 +1,6 @@
 ---
 name: read-text
-description: 读取文本文件内容（.txt / .md / .docx）。
+description: "Use this skill to read plain text content from .txt, .md, or .docx files. Triggers: when you need the raw text content of a file for processing, or when another skill needs text input from a document. Output: JSON with text content and line count. Do NOT use for structured Word document parsing (style properties, layout) — use parse-word instead. Do NOT use for keyword search — use query-word-text instead."
 ---
 
 # read-text

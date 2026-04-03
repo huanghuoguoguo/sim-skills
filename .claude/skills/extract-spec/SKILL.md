@@ -1,6 +1,6 @@
 ---
 name: extract-spec
-description: 从模板、成品论文和说明文档中提取论文格式规则，输出用户可精校的 spec.md。
+description: "Use this skill to extract formatting rules from reference materials and produce a spec.md for user review. Triggers: when user provides a template (.docx/.dotm), a sample thesis, or a formatting guide document, and wants rules extracted. Output: a human-readable spec.md covering page setup, body text, headings, captions, abstract, references, TOC, headers/footers. Do NOT use for checking a document — use check-thesis instead. Do NOT use if rules are already written in a spec.md."
 ---
 
 # extract-spec

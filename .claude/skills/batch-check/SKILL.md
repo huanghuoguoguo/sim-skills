@@ -1,6 +1,6 @@
 ---
 name: batch-check
-description: 通用文档属性比对引擎，按 check 指令逐条比对文档事实，返回 pass/fail/unresolved 结果。
+description: "Use this skill to compare document facts against expected formatting rules. Triggers: when checking font, font_size, alignment, line_spacing, margins, indentation, page_size, or captions against expected values. Input: facts JSON (or .docx) + check instructions JSON. Output: per-check pass/fail/unresolved results. Run with --schema to see all supported check types. Do NOT use for semantic rules (abstract format, references, TOC) — those require Agent judgment."
 ---
 
 # batch-check
@@ -65,3 +65,7 @@ python3 .claude/skills/batch-check/scripts/run.py <facts.json|file.docx> <checks
 ```
 
 输入校验失败时返回 `{"errors": [...]}` 并不执行任何比对。
+
+## 进阶参考
+
+完整 check 指令示例、中文字号映射表、Troubleshooting 指南见 [REFERENCE.md](REFERENCE.md)。

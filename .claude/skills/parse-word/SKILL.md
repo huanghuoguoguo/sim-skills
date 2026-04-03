@@ -1,6 +1,6 @@
 ---
 name: parse-word
-description: 解析 .docx/.dotm 并输出结构化事实，用于规则提取和论文检查的共享基础能力。
+description: "Use this skill to parse .docx or .dotm files into structured facts (DocumentIR). Triggers: when any other skill or workflow needs paragraph properties, style definitions, page layout, or header/footer content from a Word document. Produces JSON output with metadata, layout, paragraphs (with font, font_size, alignment, line_spacing, indentation), styles, headers, and footers. Do NOT use for .doc or .pdf files. Do NOT use for editing or creating documents — this is read-only extraction."
 ---
 
 # parse-word

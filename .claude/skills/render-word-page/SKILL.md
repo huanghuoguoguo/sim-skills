@@ -1,6 +1,6 @@
 ---
 name: render-word-page
-description: 将 Word 文档指定页渲染成图片，用于版式冲突仲裁和视觉复核。
+description: "Use this skill to render a specific page of a Word document as a PNG image. Triggers: when text-based facts are insufficient to resolve a formatting conflict and visual verification is needed, or when the user explicitly asks to see a page. Do NOT use as the default inspection path — prefer structured tools (parse-word, query-word-style, paragraph-stats) first. Only use for visual arbitration when structural data is ambiguous."
 ---
 
 # render-word-page

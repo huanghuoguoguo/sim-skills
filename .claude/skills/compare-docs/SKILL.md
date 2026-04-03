@@ -1,6 +1,6 @@
 ---
 name: compare-docs
-description: 比对两份 Word 文档的格式差异。
+description: "Use this skill to compare formatting differences between two Word documents. Triggers: when user provides a reference .docx/.dotm and a target .docx/.dotm and wants to see what formatting properties differ (page layout, margins, paragraph styles, fonts, spacing). Output: JSON diff list + Markdown report. Do NOT use for rule-based compliance checking — use check-thesis for that. Do NOT use for .doc or .pdf files."
 ---
 
 # compare-docs

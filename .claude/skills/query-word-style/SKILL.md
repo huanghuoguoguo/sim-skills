@@ -1,6 +1,6 @@
 ---
 name: query-word-style
-description: 查询 Word 文档中的样式最终属性值，适合核对正文、标题等真实样式配置。
+description: "Use this skill to query the resolved (final) properties of a named style in a Word document. Triggers: when you need to check what font, font_size, alignment, line_spacing, or indentation a style like 'Heading 1', 'Normal', or 'Body Text' resolves to after inheritance. Follows the cascade: direct format > current style > parent style > document default. Do NOT use for checking actual paragraph properties — use paragraph-stats for that, since direct formatting often overrides style definitions in Chinese templates."
 ---
 
 # query-word-style

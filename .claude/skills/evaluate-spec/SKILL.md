@@ -1,6 +1,6 @@
 ---
 name: evaluate-spec
-description: 评估 spec.md 的覆盖性、具体性和可执行性，帮助 Agent 在用户精校前发现遗漏和歧义。
+description: "Use this skill to evaluate a spec.md for quality before user review or downstream checking. Triggers: after extract-spec produces a spec.md, or when user wants to validate an existing spec. Checks coverage (page setup, body, headings, captions, abstract, references), specificity, consistency, and traceability. Output: pass / needs_revision / blocked_user_input. Do NOT use for checking a document against rules — use check-thesis for that. Do NOT use for extracting rules — use extract-spec."
 ---
 
 # evaluate-spec
