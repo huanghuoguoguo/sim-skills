@@ -131,6 +131,26 @@ CHECK_SCHEMA = {
                 "selector": "document:layout",
             },
         },
+        "bold": {
+            "description": "Check if paragraphs are bold (true/false)",
+            "required_fields": ["type", "selector", "expected"],
+            "expected_values": [True, False],
+            "example": {
+                "type": "bold",
+                "selector": "style:Heading 1",
+                "expected": True,
+            },
+        },
+        "italic": {
+            "description": "Check if paragraphs are italic (true/false)",
+            "required_fields": ["type", "selector", "expected"],
+            "expected_values": [True, False],
+            "example": {
+                "type": "italic",
+                "selector": "style:Heading 1",
+                "expected": False,
+            },
+        },
     },
     "selectors": {
         "style:<name>": (
@@ -259,7 +279,9 @@ def _compare_property(check: dict, p: dict, prop_name: str, expected, actual, to
         }
 
     passed = False
-    if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
+    if isinstance(expected, bool):
+        passed = bool(actual) == expected
+    elif isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
         passed = values_close(float(expected), float(actual), tolerance=tolerance)
     elif isinstance(expected, str) and isinstance(actual, str):
         passed = normalized(expected) == normalized(actual)
@@ -301,10 +323,6 @@ def _check_simple_property(paragraphs: list[dict], check: dict, prop_name: str, 
 def check_font(paragraphs: list[dict], check: dict) -> dict:
     scope = check.get("scope", "east_asia")
     prop = "font_family_east_asia" if scope == "east_asia" else "font_family_ascii"
-    # Skip paragraphs where the font property is None — typically means
-    # the paragraph has no runs in the relevant script (e.g. no CJK chars
-    # for east_asia, no Latin chars for ascii). Reporting these as "missing"
-    # would flood the result with false positives.
     applicable = [p for p in paragraphs if p.get("properties", {}).get(prop) is not None]
     skipped = len(paragraphs) - len(applicable)
     result = _check_simple_property(applicable, check, prop, tolerance=0.0)
@@ -319,6 +337,14 @@ def check_font_size(paragraphs: list[dict], check: dict) -> dict:
 
 def check_alignment(paragraphs: list[dict], check: dict) -> dict:
     return _check_simple_property(paragraphs, check, "alignment", tolerance=0.0)
+
+
+def check_bold(paragraphs: list[dict], check: dict) -> dict:
+    return _check_simple_property(paragraphs, check, "bold", tolerance=0.0)
+
+
+def check_italic(paragraphs: list[dict], check: dict) -> dict:
+    return _check_simple_property(paragraphs, check, "italic", tolerance=0.0)
 
 
 def check_line_spacing(paragraphs: list[dict], check: dict) -> dict:
@@ -393,6 +419,8 @@ CHECK_DISPATCH = {
     "font_size": check_font_size,
     "alignment": check_alignment,
     "line_spacing": check_line_spacing,
+    "bold": check_bold,
+    "italic": check_italic,
 }
 
 SPACING_TYPES = {
