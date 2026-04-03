@@ -41,6 +41,8 @@ python3 .claude/skills/evaluate-spec/scripts/check_body_consistency.py \
   --evidence evidence.json --checks checks.json
 ```
 
+**标题规则也应做类似验证**：对每级标题调用 `paragraph-stats --style-hint "heading N"`，比对实际段落的字体/字号与 spec.md 中的规则是否一致。样式定义和实际段落不一致是中文模板中的常见问题。
+
 ## 输出
 
 简短评估结果，包含：通过项、缺失项、模糊项、冲突项、建议修改列表。

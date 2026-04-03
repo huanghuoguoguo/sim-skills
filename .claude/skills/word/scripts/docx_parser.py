@@ -66,6 +66,32 @@ def build_paragraph_fact(index: int, paragraph) -> ParagraphFact:
     )
 
 
+def normalize_style_properties_for_output(raw: dict[str, Any]) -> dict[str, Any]:
+    """Convert raw style properties (Length, enums) to serializable values."""
+    out: dict[str, Any] = {}
+    for key in ("font_family", "font_family_east_asia", "font_family_ascii"):
+        if raw.get(key) is not None:
+            out[key] = raw[key]
+    if raw.get("font_size_pt") is not None:
+        out["font_size_pt"] = raw["font_size_pt"]
+    if raw.get("alignment") is not None:
+        out["alignment"] = normalize_alignment(raw["alignment"])
+    ls_mode, ls_value = normalize_line_spacing(
+        raw.get("line_spacing_rule"), raw.get("line_spacing"),
+    )
+    if ls_mode is not None:
+        out["line_spacing_mode"] = ls_mode
+    if ls_value is not None:
+        out["line_spacing_value"] = ls_value
+    if raw.get("space_before") is not None:
+        out["space_before_pt"] = length_to_pt(raw["space_before"])
+    if raw.get("space_after") is not None:
+        out["space_after_pt"] = length_to_pt(raw["space_after"])
+    if raw.get("first_line_indent") is not None:
+        out["first_line_indent_pt"] = length_to_pt(raw["first_line_indent"])
+    return out
+
+
 def collect_styles(document: Document) -> list[StyleFact]:
     styles: list[StyleFact] = []
     for style in document.styles:
@@ -77,7 +103,9 @@ def collect_styles(document: Document) -> list[StyleFact]:
                 style_id=getattr(style, "style_id", None),
                 style_type=str(style.type),
                 base_style=getattr(getattr(style, "base_style", None), "name", None),
-                properties=extract_style_properties(style),
+                properties=normalize_style_properties_for_output(
+                    extract_style_properties(style)
+                ),
             )
         )
     return styles
@@ -134,23 +162,44 @@ def read_core_property(document: Document, name: str) -> str | None:
 
 
 def extract_layout(document: Document) -> dict[str, Any]:
-    section = document.sections[0] if document.sections else None
-    if section is None:
+    if not document.sections:
         return {}
-    return {
+    primary = document.sections[0]
+    layout = {
         "page_size": {
-            "width_cm": length_to_cm(section.page_width),
-            "height_cm": length_to_cm(section.page_height),
+            "width_cm": length_to_cm(primary.page_width),
+            "height_cm": length_to_cm(primary.page_height),
         },
         "page_margins": {
-            "top_cm": length_to_cm(section.top_margin),
-            "bottom_cm": length_to_cm(section.bottom_margin),
-            "left_cm": length_to_cm(section.left_margin),
-            "right_cm": length_to_cm(section.right_margin),
+            "top_cm": length_to_cm(primary.top_margin),
+            "bottom_cm": length_to_cm(primary.bottom_margin),
+            "left_cm": length_to_cm(primary.left_margin),
+            "right_cm": length_to_cm(primary.right_margin),
         },
-        "header_distance_cm": length_to_cm(section.header_distance),
-        "footer_distance_cm": length_to_cm(section.footer_distance),
+        "header_distance_cm": length_to_cm(primary.header_distance),
+        "footer_distance_cm": length_to_cm(primary.footer_distance),
+        "section_count": len(document.sections),
     }
+    # Flag sections with different page size/margins (e.g. landscape pages)
+    if len(document.sections) > 1:
+        other_sections = []
+        for i, sec in enumerate(document.sections[1:], start=1):
+            w, h = length_to_cm(sec.page_width), length_to_cm(sec.page_height)
+            pw, ph = layout["page_size"]["width_cm"], layout["page_size"]["height_cm"]
+            if w != pw or h != ph:
+                other_sections.append({
+                    "section_index": i,
+                    "page_size": {"width_cm": w, "height_cm": h},
+                    "page_margins": {
+                        "top_cm": length_to_cm(sec.top_margin),
+                        "bottom_cm": length_to_cm(sec.bottom_margin),
+                        "left_cm": length_to_cm(sec.left_margin),
+                        "right_cm": length_to_cm(sec.right_margin),
+                    },
+                })
+        if other_sections:
+            layout["other_sections"] = other_sections
+    return layout
 
 
 def extract_headers_footers(document: Document, hf_type: str) -> list[dict]:
@@ -243,8 +292,9 @@ def extract_paragraph_properties(paragraph) -> tuple[dict[str, Any], dict[str, s
     font_family = font_family_east_asia or font_family_ascii
     assign_property(properties, property_sources, "font_family", font_family, "direct" if font_family else "style")
 
-    font_size_pt = first_present(detect_font_size_from_runs(paragraph), style_properties.get("font_size_pt"))
-    assign_property(properties, property_sources, "font_size_pt", font_size_pt, "direct" if detect_font_size_from_runs(paragraph) else "style")
+    run_font_size = detect_font_size_from_runs(paragraph)
+    font_size_pt = first_present(run_font_size, style_properties.get("font_size_pt"))
+    assign_property(properties, property_sources, "font_size_pt", font_size_pt, "direct" if run_font_size else "style")
 
     first_line_indent_pt = length_to_pt(first_present(fmt.first_line_indent, style_properties.get("first_line_indent")))
     assign_property(properties, property_sources, "first_line_indent_pt", first_line_indent_pt, "direct" if fmt.first_line_indent is not None else "style")

@@ -19,43 +19,6 @@ from docx_parser import parse_word_document
 from utils import resolve_path, write_json_output
 
 
-ALIGNMENT_ENUM_MAP = {
-    0: "left",
-    1: "center",
-    2: "right",
-    3: "justify",
-}
-
-EMU_PER_PT = 12700
-
-
-def to_points(value):
-    if not isinstance(value, (int, float)):
-        return value
-    return round(value / EMU_PER_PT, 2)
-
-
-def normalize_properties(properties: dict) -> dict:
-    normalized = dict(properties)
-
-    alignment = normalized.get("alignment")
-    if alignment in ALIGNMENT_ENUM_MAP:
-        normalized["alignment"] = ALIGNMENT_ENUM_MAP[alignment]
-
-    if "space_before" in normalized:
-        normalized["space_before_pt"] = to_points(normalized["space_before"])
-    if "space_after" in normalized:
-        normalized["space_after_pt"] = to_points(normalized["space_after"])
-    if "first_line_indent" in normalized:
-        normalized["first_line_indent_pt"] = to_points(normalized["first_line_indent"])
-    if "line_spacing" in normalized:
-        normalized["line_spacing_pt"] = to_points(normalized["line_spacing"])
-    if "font_family" in normalized and "font_family_zh" not in normalized:
-        normalized["font_family_zh"] = normalized["font_family"]
-
-    return normalized
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Query document style with normalized properties")
     parser.add_argument("input", help="Path to .docx/.dotm file")
@@ -72,8 +35,7 @@ def main() -> int:
                     "name": style.name,
                     "style_id": style.style_id,
                     "type": style.style_type,
-                    "properties": normalize_properties(style.properties),
-                    "raw_properties": style.properties,
+                    "properties": style.properties,
                 }
             )
 

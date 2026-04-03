@@ -71,6 +71,7 @@ def main():
     parser.add_argument("reference", help="Path to reference .docx file")
     parser.add_argument("target", help="Path to target .docx file")
     parser.add_argument("--output", help="Where to write JSON result")
+    parser.add_argument("--report", help="Where to write Markdown report (omit to skip)")
     args = parser.parse_args()
 
     ref_path = resolve_path(args.reference)
@@ -106,8 +107,6 @@ def main():
                 "message": f"{key}: 参考={ref_val}, 目标={target_val}",
             })
 
-    report = generate_diff_report(diffs, ref_path, target_path)
-
     result = {
         "reference": ref_path,
         "target": target_path,
@@ -118,9 +117,10 @@ def main():
 
     write_json_output(result, args.output)
 
-    report_path = Path(target_path).stem + "_diff_report.md"
-    Path(report_path).write_text(report, encoding="utf-8")
-    print(f"Markdown report saved to: {report_path}", file=sys.stderr)
+    if args.report:
+        report = generate_diff_report(diffs, ref_path, target_path)
+        Path(args.report).write_text(report, encoding="utf-8")
+        print(f"Markdown report saved to: {args.report}", file=sys.stderr)
 
     return 0
 

@@ -203,6 +203,11 @@ def select_paragraphs(paragraphs: list[dict], check: dict) -> list[dict]:
         names = set(aliases)
         if style_name:
             names.add(style_name)
+        # Auto-include the name from selector itself so Agent doesn't need
+        # to redundantly list it in style_aliases.
+        selector_name = normalized(selector[len("style:"):])
+        if selector_name:
+            names.add(selector_name)
         return [p for p in paragraphs if normalized(p.get("style_name")) in names]
 
     if selector in {"caption:figure", "caption:table"}:
@@ -296,7 +301,16 @@ def _check_simple_property(paragraphs: list[dict], check: dict, prop_name: str, 
 def check_font(paragraphs: list[dict], check: dict) -> dict:
     scope = check.get("scope", "east_asia")
     prop = "font_family_east_asia" if scope == "east_asia" else "font_family_ascii"
-    return _check_simple_property(paragraphs, check, prop, tolerance=0.0)
+    # Skip paragraphs where the font property is None — typically means
+    # the paragraph has no runs in the relevant script (e.g. no CJK chars
+    # for east_asia, no Latin chars for ascii). Reporting these as "missing"
+    # would flood the result with false positives.
+    applicable = [p for p in paragraphs if p.get("properties", {}).get(prop) is not None]
+    skipped = len(paragraphs) - len(applicable)
+    result = _check_simple_property(applicable, check, prop, tolerance=0.0)
+    if skipped > 0 and result["status"] != "unresolved":
+        result["actual"] = f"{result['actual']} (skipped {skipped} without {scope} font)"
+    return result
 
 
 def check_font_size(paragraphs: list[dict], check: dict) -> dict:

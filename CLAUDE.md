@@ -53,7 +53,7 @@ python3 .claude/skills/evaluate-spec/scripts/check_structure.py <spec.md>
 python3 .claude/skills/evaluate-spec/scripts/check_body_consistency.py --evidence <evidence.json> --checks <checks.json>
 
 # Compare two Word documents
-python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx> [--output diff.json]
+python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx> [--output diff.json] [--report diff_report.md]
 ```
 
 ## Skill Layout
