@@ -12,22 +12,13 @@ libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
 if str(libs_dir) not in sys.path:
     sys.path.insert(0, str(libs_dir))
 
-from utils import resolve_path, write_json_output
+from utils import resolve_path, values_close, write_json_output
 
 
-def top_item(distribution: list[dict]):
+def top_value(distribution: list[dict]):
     if not distribution:
         return None
     return distribution[0]
-
-
-def approx_equal(expected, actual, tolerance: float = 0.5) -> bool:
-    if expected is None or actual is None:
-        return False
-    try:
-        return abs(float(expected) - float(actual)) <= tolerance
-    except (TypeError, ValueError):
-        return False
 
 
 def check_body_consistency(
@@ -45,26 +36,13 @@ def check_body_consistency(
     """
     summary = evidence.get("summary", {})
 
-    top_font_size_item = top_item(summary.get("font_size_distribution", []))
-    top_line_spacing_item = top_item(summary.get("line_spacing_distribution", []))
-    top_indent_item = top_item(summary.get("first_line_indent_distribution", []))
-    top_east_asia_font_item = top_item(summary.get("east_asia_font_distribution", []))
-    top_ascii_font_item = top_item(summary.get("ascii_font_distribution", []))
-
-    top_font_size = top_font_size_item["value"] if top_font_size_item else None
-    top_line_spacing = top_line_spacing_item["value"] if top_line_spacing_item else None
-    top_indent = top_indent_item["value"] if top_indent_item else None
+    top_east_asia_font = top_value(summary.get("east_asia_font_distribution", []))
+    top_ascii_font = top_value(summary.get("ascii_font_distribution", []))
 
     top_values = {
-        "font_size": top_font_size,
-        "line_spacing": top_line_spacing,
-        "first_line_indent": top_indent,
-    }
-    reasons = {
-        "font_size": "Body font size distribution does not match expected.",
-        "line_spacing": "Body line spacing distribution does not match expected.",
-        "first_line_indent": "Body indent distribution does not match expected.",
-        "font": "Body font distribution does not match expected.",
+        "font_size": (top_value(summary.get("font_size_distribution", [])) or {}).get("value"),
+        "line_spacing": (top_value(summary.get("line_spacing_distribution", [])) or {}).get("value"),
+        "first_line_indent": (top_value(summary.get("first_line_indent_distribution", [])) or {}).get("value"),
     }
 
     mismatches = []
@@ -84,28 +62,28 @@ def check_body_consistency(
             expected = check.get("expected")
             actual = top_values.get(check_type)
             tol = 0.2 if check_type == "font_size" else 1.0
-            if approx_equal(expected, actual, tolerance=tol):
+            if values_close(expected, actual, tolerance=tol):
                 supported.append({"rule_text": rule_text, "evidence": actual})
             else:
                 mismatches.append({
                     "rule_text": rule_text, "type": check_type,
                     "expected": expected, "actual": actual,
-                    "reason": reasons[check_type],
+                    "reason": f"Body {check_type} distribution does not match expected.",
                 })
         elif check_type == "line_spacing":
             expected = check.get("expected", {})
             expected_value = f"{expected.get('mode')}:{expected.get('value')}"
-            if top_line_spacing == expected_value:
-                supported.append({"rule_text": rule_text, "evidence": top_line_spacing})
+            if top_values["line_spacing"] == expected_value:
+                supported.append({"rule_text": rule_text, "evidence": top_values["line_spacing"]})
             else:
                 mismatches.append({
                     "rule_text": rule_text, "type": "line_spacing",
-                    "expected": expected_value, "actual": top_line_spacing,
-                    "reason": reasons["line_spacing"],
+                    "expected": expected_value, "actual": top_values["line_spacing"],
+                    "reason": "Body line_spacing distribution does not match expected.",
                 })
         elif check_type == "font":
             scope = check.get("scope", "east_asia")
-            evidence_item = top_east_asia_font_item if scope == "east_asia" else top_ascii_font_item
+            evidence_item = top_east_asia_font if scope == "east_asia" else top_ascii_font
             if evidence_item is None or evidence_item["count"] < 3:
                 continue
             actual = evidence_item["value"]
@@ -115,7 +93,7 @@ def check_body_consistency(
                 mismatches.append({
                     "rule_text": rule_text, "type": "font", "scope": scope,
                     "expected": check.get("expected"), "actual": actual,
-                    "reason": reasons["font"],
+                    "reason": "Body font distribution does not match expected.",
                 })
 
     status = "pass" if not mismatches else "needs_revision"

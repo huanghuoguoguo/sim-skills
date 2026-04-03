@@ -14,17 +14,11 @@ libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
 if str(libs_dir) not in sys.path:
     sys.path.insert(0, str(libs_dir))
 
-from utils import resolve_path, write_json_output
+from utils import load_facts, normalized, resolve_path, write_json_output
 
 
 LATIN_RE = re.compile(r"[A-Za-z]")
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
-
-
-def normalized(value: str | None) -> str:
-    if value is None:
-        return ""
-    return re.sub(r"\s+", "", value).lower()
 
 
 def round_if_number(value):
@@ -54,30 +48,23 @@ def matches_filter(
     text = (p.get("text") or "").strip()
     props = p.get("properties", {})
 
-    # Length filter
     if len(text) < min_length:
         return False
 
-    # Exclude by text content
     if any(token in text for token in exclude_texts):
         return False
 
-    # Exclude heading-like paragraphs
-    if heading_prefixes or heading_keywords:
-        compact = text.strip()
-        if any(re.match(pat, compact) for pat in heading_prefixes):
-            return False
-        if any(compact.startswith(kw) for kw in heading_keywords):
-            return False
+    if any(re.match(pat, text) for pat in heading_prefixes):
+        return False
+    if any(text.startswith(kw) for kw in heading_keywords):
+        return False
 
-    # Exclude instruction-like paragraphs
     if instruction_hints:
-        compact = text.strip()
         if "    " in text:
             return False
-        if compact.count("：") >= 2 and "。" not in compact:
+        if text.count("：") >= 2 and "。" not in text:
             return False
-        if any(hint in compact for hint in instruction_hints):
+        if any(hint in text for hint in instruction_hints):
             return False
 
     # Body shape check
@@ -164,21 +151,6 @@ def compute_stats(paragraphs: list[dict], sample_limit: int = 8) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Facts loading
-# ---------------------------------------------------------------------------
-
-def load_facts(path: str) -> dict:
-    """Load document facts from JSON or parse from .docx/.dotm."""
-    if path.endswith(".json"):
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-
-    from utils import setup_word_scripts_path
-    setup_word_scripts_path(__file__)
-    from docx_parser import parse_word_document
-    return parse_word_document(path).to_dict()
-
-
-# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -198,7 +170,7 @@ def main() -> int:
     parser.add_argument("--require-body-shape", action="store_true", help="Only paragraphs with justify alignment or first-line indent")
     args = parser.parse_args()
 
-    facts = load_facts(resolve_path(args.input))
+    facts = load_facts(resolve_path(args.input), anchor_file=__file__)
     non_empty = [p for p in facts.get("paragraphs", []) if (p.get("text") or "").strip()]
 
     style_hints = tuple(normalized(s) for s in args.style_hint)

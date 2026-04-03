@@ -17,7 +17,7 @@ libs_dir = Path(__file__).resolve().parents[2] / "__libs__"
 if str(libs_dir) not in sys.path:
     sys.path.insert(0, str(libs_dir))
 
-from utils import resolve_path, write_json_output
+from utils import load_facts, normalized, resolve_path, values_close, write_json_output
 
 # ---------------------------------------------------------------------------
 # Schema: self-describing check capabilities
@@ -190,18 +190,8 @@ def validate_check(check: dict, index: int) -> str | None:
 A4_SIZE_CM = (21.0, 29.7)
 
 
-def normalized(value: str | None) -> str:
-    if value is None:
-        return ""
-    return re.sub(r"\s+", "", value).lower()
-
-
-def values_close(expected: float, actual: float, tolerance: float = 0.5) -> bool:
-    return abs(expected - actual) <= tolerance
-
-
 # ---------------------------------------------------------------------------
-# Paragraph selection (dict-based access)
+# Paragraph selection
 # ---------------------------------------------------------------------------
 
 def select_paragraphs(paragraphs: list[dict], check: dict) -> list[dict]:
@@ -216,11 +206,11 @@ def select_paragraphs(paragraphs: list[dict], check: dict) -> list[dict]:
         return [p for p in paragraphs if normalized(p.get("style_name")) in names]
 
     if selector in {"caption:figure", "caption:table"}:
-        patterns = check.get("caption_prefix_patterns", [])
+        compiled = [re.compile(pat) for pat in check.get("caption_prefix_patterns", [])]
         return [
             p for p in paragraphs
             if normalized(p.get("style_name")) in aliases
-            or any(re.match(pat, p["text"]) for pat in patterns)
+            or any(rx.match(p["text"]) for rx in compiled)
         ]
 
     return []
@@ -291,30 +281,30 @@ def _paragraph_result(check: dict, paragraphs: list[dict], issues: list[dict]) -
     return build_result(check, "pass", f"{len(paragraphs)} ok", [], matched_count=len(paragraphs))
 
 
+def _check_simple_property(paragraphs: list[dict], check: dict, prop_name: str, tolerance: float) -> dict:
+    """Generic check for a single paragraph property against expected value."""
+    expected = check["expected"]
+    if isinstance(expected, (int, float)):
+        expected = float(expected)
+    issues = [
+        issue for p in paragraphs
+        if (issue := _compare_property(check, p, prop_name, expected, p.get("properties", {}).get(prop_name), tolerance=tolerance))
+    ]
+    return _paragraph_result(check, paragraphs, issues)
+
+
 def check_font(paragraphs: list[dict], check: dict) -> dict:
     scope = check.get("scope", "east_asia")
     prop = "font_family_east_asia" if scope == "east_asia" else "font_family_ascii"
-    issues = [
-        issue for p in paragraphs
-        if (issue := _compare_property(check, p, prop, check.get("expected"), p.get("properties", {}).get(prop), tolerance=0.0))
-    ]
-    return _paragraph_result(check, paragraphs, issues)
+    return _check_simple_property(paragraphs, check, prop, tolerance=0.0)
 
 
 def check_font_size(paragraphs: list[dict], check: dict) -> dict:
-    issues = [
-        issue for p in paragraphs
-        if (issue := _compare_property(check, p, "font_size_pt", float(check["expected"]), p.get("properties", {}).get("font_size_pt"), tolerance=0.2))
-    ]
-    return _paragraph_result(check, paragraphs, issues)
+    return _check_simple_property(paragraphs, check, "font_size_pt", tolerance=0.2)
 
 
 def check_alignment(paragraphs: list[dict], check: dict) -> dict:
-    issues = [
-        issue for p in paragraphs
-        if (issue := _compare_property(check, p, "alignment", check["expected"], p.get("properties", {}).get("alignment"), tolerance=0.0))
-    ]
-    return _paragraph_result(check, paragraphs, issues)
+    return _check_simple_property(paragraphs, check, "alignment", tolerance=0.0)
 
 
 def check_line_spacing(paragraphs: list[dict], check: dict) -> dict:
@@ -340,11 +330,7 @@ def check_line_spacing(paragraphs: list[dict], check: dict) -> dict:
 
 
 def check_spacing(paragraphs: list[dict], check: dict, prop_name: str) -> dict:
-    issues = [
-        issue for p in paragraphs
-        if (issue := _compare_property(check, p, prop_name, float(check["expected"]), p.get("properties", {}).get(prop_name), tolerance=0.5))
-    ]
-    return _paragraph_result(check, paragraphs, issues)
+    return _check_simple_property(paragraphs, check, prop_name, tolerance=0.5)
 
 
 def check_margin(facts: dict, check: dict) -> dict:
@@ -414,7 +400,6 @@ def run_batch_check(facts: dict, checks: list[dict]) -> dict:
     results = []
     errors = []
 
-    # Validate all checks first
     for i, check in enumerate(checks):
         err = validate_check(check, i)
         if err:
@@ -422,10 +407,7 @@ def run_batch_check(facts: dict, checks: list[dict]) -> dict:
     if errors:
         return {"errors": errors, "summary": None, "results": [], "issues": []}
 
-    # Pre-filter non-empty paragraphs
     non_empty = [p for p in facts.get("paragraphs", []) if p.get("text", "").strip()]
-
-    # Cache paragraph selections
     para_cache: dict[tuple, list[dict]] = {}
 
     for check in checks:
@@ -469,22 +451,6 @@ def run_batch_check(facts: dict, checks: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Facts loading
-# ---------------------------------------------------------------------------
-
-def load_facts(path: str) -> dict:
-    """Load document facts from JSON or parse from .docx/.dotm."""
-    if path.endswith(".json"):
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-
-    # Lazy import: only need docx_parser when input is a Word file
-    from utils import setup_word_scripts_path
-    setup_word_scripts_path(__file__)
-    from docx_parser import parse_word_document
-    return parse_word_document(path).to_dict()
-
-
-# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -503,7 +469,7 @@ def main() -> int:
     if not args.facts or not args.checks:
         parser.error("both <facts> and <checks> arguments are required (use --schema for help)")
 
-    facts = load_facts(resolve_path(args.facts))
+    facts = load_facts(resolve_path(args.facts), anchor_file=__file__)
     checks_raw = json.loads(Path(resolve_path(args.checks)).read_text(encoding="utf-8"))
     checks = checks_raw.get("checks", checks_raw) if isinstance(checks_raw, dict) else checks_raw
 

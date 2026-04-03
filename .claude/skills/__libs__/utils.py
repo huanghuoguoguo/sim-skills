@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import glob
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -51,3 +52,38 @@ def setup_word_scripts_path(anchor_file: str) -> None:
     word_scripts = Path(anchor_file).resolve().parents[2] / "word" / "scripts"
     if str(word_scripts) not in sys.path:
         sys.path.insert(0, str(word_scripts))
+
+
+def normalized(value: str | None) -> str:
+    """Remove whitespace and lowercase for comparison."""
+    if value is None:
+        return ""
+    return re.sub(r"\s+", "", value).lower()
+
+
+def values_close(expected: float, actual: float, tolerance: float = 0.5) -> bool:
+    """Compare numeric values within tolerance."""
+    if expected is None or actual is None:
+        return False
+    try:
+        return abs(float(expected) - float(actual)) <= tolerance
+    except (TypeError, ValueError):
+        return False
+
+
+def load_facts(path: str, anchor_file: str | None = None) -> dict:
+    """Load document facts from JSON or parse from .docx/.dotm.
+
+    Args:
+        path: Path to a .json facts file or a .docx/.dotm document.
+        anchor_file: Caller's __file__, used to locate docx_parser.
+            Required when path is a Word file.
+    """
+    if path.endswith(".json"):
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+
+    if anchor_file is None:
+        raise ValueError("anchor_file is required when loading .docx/.dotm")
+    setup_word_scripts_path(anchor_file)
+    from docx_parser import parse_word_document
+    return parse_word_document(path).to_dict()
