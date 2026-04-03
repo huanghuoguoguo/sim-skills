@@ -26,6 +26,7 @@ class ParagraphFact:
     style_id: str | None = None
     properties: dict[str, Any] = field(default_factory=dict)
     property_sources: dict[str, str] = field(default_factory=dict)
+    numbering: dict[str, Any] | None = None
 
 
 @dataclass
@@ -54,6 +55,7 @@ class WordDocumentFacts:
     styles: list[StyleFact]
     headers: list[HeaderFooterFact] = field(default_factory=list)
     footers: list[HeaderFooterFact] = field(default_factory=list)
+    tables: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return to_plain_data(self)

@@ -4,7 +4,8 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any
-from xml.etree import ElementTree as ET
+from defusedxml.ElementTree import fromstring as _safe_fromstring
+from xml.etree.ElementTree import tostring as _ET_tostring
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from docx import Document
@@ -33,6 +34,7 @@ def parse_word_document(path: str | Path) -> WordDocumentFacts:
         styles = collect_styles(document)
         headers = extract_headers_footers(document, "header")
         footers = extract_headers_footers(document, "footer")
+        tables = extract_tables(document)
         return WordDocumentFacts(
             format=normalized_format(source_path),
             metadata={
@@ -40,12 +42,14 @@ def parse_word_document(path: str | Path) -> WordDocumentFacts:
                 "title": read_core_property(document, "title"),
                 "paragraph_count": len(document.paragraphs),
                 "non_empty_paragraph_count": sum(1 for paragraph in paragraphs if paragraph.text),
+                "table_count": len(tables),
             },
             layout=extract_layout(document),
             paragraphs=paragraphs,
             styles=styles,
             headers=headers,
             footers=footers,
+            tables=tables,
         )
     finally:
         cleanup()
@@ -55,6 +59,7 @@ def build_paragraph_fact(index: int, paragraph) -> ParagraphFact:
     style_name = paragraph.style.name if paragraph.style is not None else None
     style_id = paragraph.style.style_id if paragraph.style is not None else None
     properties, property_sources = extract_paragraph_properties(paragraph)
+    numbering = extract_numbering(paragraph)
     return ParagraphFact(
         id=f"p-{index + 1}",
         index=index,
@@ -63,6 +68,7 @@ def build_paragraph_fact(index: int, paragraph) -> ParagraphFact:
         style_id=style_id,
         properties=properties,
         property_sources=property_sources,
+        numbering=numbering,
     )
 
 
@@ -135,7 +141,7 @@ def normalize_wordprocessingml_package(path: Path) -> tuple[Path, callable]:
 
 
 def rewrite_main_document_content_type(data: bytes) -> bytes:
-    root = ET.fromstring(data)
+    root = _safe_fromstring(data)
     namespace = {"ct": "http://schemas.openxmlformats.org/package/2006/content-types"}
     for override in root.findall("ct:Override", namespace):
         if override.attrib.get("PartName") == "/word/document.xml":
@@ -143,7 +149,7 @@ def rewrite_main_document_content_type(data: bytes) -> bytes:
                 "ContentType",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
             )
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    return _ET_tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 def safe_unlink(path: Path) -> None:
@@ -299,6 +305,12 @@ def extract_paragraph_properties(paragraph) -> tuple[dict[str, Any], dict[str, s
     first_line_indent_pt = length_to_pt(first_present(fmt.first_line_indent, style_properties.get("first_line_indent")))
     assign_property(properties, property_sources, "first_line_indent_pt", first_line_indent_pt, "direct" if fmt.first_line_indent is not None else "style")
 
+    # Bold / italic / underline detection
+    (bold, bold_src), (italic, italic_src), (underline, underline_src) = detect_text_formatting_from_runs(paragraph, style_properties)
+    assign_property(properties, property_sources, "bold", bold, bold_src)
+    assign_property(properties, property_sources, "italic", italic, italic_src)
+    assign_property(properties, property_sources, "underline", underline, underline_src)
+
     return properties, property_sources
 
 
@@ -336,6 +348,10 @@ def extract_style_properties(style) -> dict[str, Any]:
                 properties["font_family"] = font_name
             if style_font.size is not None:
                 properties["font_size_pt"] = round(style_font.size.pt, 2)
+            if style_font.bold is not None and "bold" not in properties:
+                properties["bold"] = style_font.bold
+            if style_font.italic is not None and "italic" not in properties:
+                properties["italic"] = style_font.italic
 
         paragraph_format = getattr(current_style, "paragraph_format", None)
         if paragraph_format is None:
@@ -389,23 +405,14 @@ def extract_style_fonts_detailed(style) -> dict[str, str | None]:
 
     fonts = element.rPr.rFonts
     if fonts is not None:
-        east_asia = fonts.get(qn(f"w:eastAsia"))
-        ascii_font = fonts.get(qn(f"w:ascii"))
+        east_asia = fonts.get(qn("w:eastAsia"))
+        ascii_font = fonts.get(qn("w:ascii"))
         if east_asia:
             result["font_family_east_asia"] = east_asia
         if ascii_font:
             result["font_family_ascii"] = ascii_font
 
     return result
-
-
-def detect_font_from_runs(paragraph) -> str | None:
-    """Detect a single font name from runs for simple consumers."""
-    for run in paragraph.runs:
-        font_name = extract_run_font_name(run)
-        if font_name:
-            return font_name
-    return None
 
 
 def detect_font_from_runs_detailed(paragraph) -> dict[str, str | None]:
@@ -450,19 +457,6 @@ def detect_font_size_from_runs(paragraph) -> float | None:
     return None
 
 
-def extract_run_font_name(run) -> str | None:
-    if run.font.name:
-        return run.font.name
-    r_pr = getattr(run._element, "rPr", None)
-    if r_pr is None or r_pr.rFonts is None:
-        return None
-    for attr in ("eastAsia", "ascii", "hAnsi"):
-        value = r_pr.rFonts.get(qn(f"w:{attr}"))
-        if value:
-            return value
-    return None
-
-
 def normalize_alignment(value: Any) -> str | None:
     mapping = {
         WD_ALIGN_PARAGRAPH.LEFT: "left",
@@ -503,6 +497,94 @@ def length_to_cm(value: Any) -> float | None:
     if value is None:
         return None
     return round(value.cm, 2)
+
+
+def detect_text_formatting_from_runs(paragraph, style_properties: dict) -> tuple[tuple[bool | None, str], tuple[bool | None, str], tuple[bool | None, str]]:
+    """Detect bold, italic, underline from runs. Returns ((bold, source), (italic, source), (underline, source)).
+
+    Uses majority voting across text-bearing runs. Falls back to style if no
+    direct formatting is found.
+    """
+    bold_votes, italic_votes, underline_votes = [], [], []
+
+    for run in paragraph.runs:
+        if not run.text.strip():
+            continue
+        if run.font.bold is not None:
+            bold_votes.append(run.font.bold)
+        if run.font.italic is not None:
+            italic_votes.append(run.font.italic)
+        if run.font.underline is not None:
+            underline_votes.append(bool(run.font.underline))
+
+    def majority(votes):
+        if not votes:
+            return None
+        return sum(votes) > len(votes) / 2
+
+    bold = majority(bold_votes)
+    italic = majority(italic_votes)
+    underline = majority(underline_votes)
+
+    bold_src = "direct" if bold is not None else "style"
+    italic_src = "direct" if italic is not None else "style"
+    underline_src = "direct" if underline is not None else "style"
+
+    # Fallback to style chain for bold/italic
+    if bold is None:
+        bold = style_properties.get("bold")
+    if italic is None:
+        italic = style_properties.get("italic")
+
+    return (bold, bold_src), (italic, italic_src), (underline, underline_src)
+
+
+def extract_numbering(paragraph) -> dict[str, Any] | None:
+    """Extract numbering info (numId, ilvl, outline_level) from a paragraph."""
+    p_elem = paragraph._element
+    p_pr = p_elem.find(qn("w:pPr"))
+    if p_pr is None:
+        return None
+
+    num_pr_elem = p_pr.find(qn("w:numPr"))
+    outline_lvl = p_pr.find(qn("w:outlineLvl"))
+
+    result = {}
+
+    if num_pr_elem is not None:
+        ilvl_elem = num_pr_elem.find(qn("w:ilvl"))
+        num_id_elem = num_pr_elem.find(qn("w:numId"))
+        if ilvl_elem is not None:
+            result["ilvl"] = int(ilvl_elem.get(qn("w:val"), "0"))
+        if num_id_elem is not None:
+            result["num_id"] = int(num_id_elem.get(qn("w:val"), "0"))
+
+    if outline_lvl is not None:
+        result["outline_level"] = int(outline_lvl.get(qn("w:val"), "0"))
+
+    return result if result else None
+
+
+def extract_tables(document: Document) -> list[dict[str, Any]]:
+    """Extract tables with cell text and basic properties."""
+    tables = []
+    for t_idx, table in enumerate(document.tables):
+        rows_data = []
+        for r_idx, row in enumerate(table.rows):
+            cells_data = []
+            for c_idx, cell in enumerate(row.cells):
+                cells_data.append({
+                    "text": cell.text.strip(),
+                    "paragraphs": len(cell.paragraphs),
+                })
+            rows_data.append(cells_data)
+        tables.append({
+            "index": t_idx,
+            "rows": len(table.rows),
+            "columns": len(table.columns),
+            "data": rows_data,
+        })
+    return tables
 
 
 def first_present(*values: Any) -> Any:
