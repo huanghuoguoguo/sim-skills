@@ -20,18 +20,14 @@ import fitz  # PyMuPDF
 
 def convert_to_pdf(docx_path: str, outdir: str) -> str:
     """Uses libreoffice headless to convert .docx/.dotm to .pdf."""
-    cmd = [
-        "libreoffice",
-        "--headless",
-        "--convert-to", "pdf",
-        "--outdir", outdir,
-        docx_path
-    ]
+    from soffice import run_soffice
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        run_soffice(
+            ["--headless", "--convert-to", "pdf", "--outdir", outdir, docx_path],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
     except subprocess.CalledProcessError as e:
         print(f"Error converting document: {e.stderr.decode()}", file=sys.stderr)
-        print("\nNote: Please ensure 'libreoffice-core' is installed on your system.", file=sys.stderr)
         sys.exit(1)
     except FileNotFoundError:
         print("Error: 'libreoffice' command not found. Please install libreoffice.", file=sys.stderr)
