@@ -35,6 +35,9 @@
 | `batch-check` | 通用属性比对引擎（`--schema` 查看支持的 check 类型） |
 | `paragraph-stats` | 按条件筛段落并统计属性分布 |
 | `read-text` | 读取文本文件内容 (.txt / .md / .docx) |
+| `read-pdf` | 提取 PDF 文本、表格和结构信息 |
+| `validate-word` | XSD schema 校验 + 自动修复 |
+| `inspect-word-xml` | 解包 docx 查看原始 XML |
 
 ### 工作流层 (Agent Guidance)
 
@@ -42,6 +45,7 @@
 |-------|------|
 | `extract-spec` | 从参考文件提取格式规范，输出 spec.md |
 | `check-thesis` | 基于规则检查文档格式，输出报告 |
+| `visual-check` | 利用 vision 能力进行视觉辅助检查 |
 | `compare-docs` | 比对两份 Word 文档的格式差异 |
 
 ### 质量门禁 (Gate)

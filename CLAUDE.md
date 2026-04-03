@@ -54,6 +54,15 @@ python3 .claude/skills/evaluate-spec/scripts/check_body_consistency.py --evidenc
 
 # Compare two Word documents
 python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx> [--output diff.json] [--report diff_report.md]
+
+# Extract text/tables from PDF
+python3 .claude/skills/read-pdf/scripts/run.py <file.pdf> [--pages 1-5] [--tables] [--all] [--output result.json]
+
+# Validate Word document XML structure
+python3 .claude/skills/validate-word/scripts/run.py <file.docx> [--auto-repair] [-v]
+
+# Inspect raw XML of Word document
+python3 .claude/skills/inspect-word-xml/scripts/run.py <file.docx> [--output-dir unpacked/] [--show word/document.xml] [--list]
 ```
 
 ## Skill Layout
@@ -69,7 +78,11 @@ python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx
 ├── query-word-style/           # tool: style query -> normalized properties
 ├── render-word-page/           # tool: page -> image
 ├── read-text/                  # tool: text file/docx text reader
+├── read-pdf/                   # tool: PDF text/table extraction
+├── validate-word/              # tool: XSD schema validation + auto-repair
+├── inspect-word-xml/           # tool: unpack docx to raw XML for debugging
 ├── check-thesis/               # workflow guidance: rules + document -> check report
+├── visual-check/               # workflow guidance: vision-based visual verification
 ├── extract-spec/               # workflow guidance: reference files -> spec.md
 ├── evaluate-spec/              # quality gate on spec.md
 │   └── scripts/
