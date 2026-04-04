@@ -44,6 +44,7 @@ class HeaderFooterFact:
     section_index: int
     paragraphs: list[dict]  # List of paragraph facts
     text: str = ""  # Combined text
+    linked_to_previous: bool = False
 
 
 @dataclass

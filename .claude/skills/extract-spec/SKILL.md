@@ -25,7 +25,8 @@ description: "Use this skill to extract formatting rules from reference material
 | `query-word-style` | 核对正文、标题等样式的最终解析值 |
 | `query-word-text` | 检索文档中的格式说明文字 |
 | `paragraph-stats` | 采样段落，统计属性分布 |
-| `render-word-page` | 视觉复核（仅在冲突时使用） |
+| `render-word-page` | 视觉复核（冲突时必须使用，见下文触发条件） |
+| `inspect-word-xml` | 降级手段：当 parse-word 页眉页脚为空时查 raw XML |
 
 ## 工作方式
 
@@ -89,10 +90,53 @@ python3 .claude/skills/paragraph-stats/scripts/run.py <facts.json> \
 4. `Normal` 等默认样式
 5. 视觉复核
 
+#### 页眉页脚提取
+
+`parse-word` 输出中检查 `headers` 和 `footers` 字段（注意不是 `headers_footers`）。
+
+如果 `headers` 或 `footers` 数组为空，或所有条目的 `text` 都为空字符串，**不要跳过页眉页脚规则**。必须降级排查：
+
+1. 用 `inspect-word-xml --list` 查看是否存在 `word/header*.xml` / `word/footer*.xml`
+2. 如果存在，用 `inspect-word-xml --show word/header1.xml` 查看 raw XML 内容
+3. 模板页眉常用 MACROBUTTON field codes 或文本框（drawing shapes），纯文本解析可能为空
+4. 用 `render-word-page` 渲染含有页眉页脚的页面做视觉确认
+
+#### render-word-page 触发条件
+
+以下场景**必须**调用 `render-word-page` 渲染对应页面：
+
+- 封面页：封面格式无法靠纯文本完整提取，必须渲染第 1 页验证
+- 页眉页脚文本提取为空但 XML 中存在内容时
+- 样式定义与实际段落属性存在冲突，且无法通过文字说明裁决时
+
+#### 首行缩进与字号的关系
+
+首行缩进的"字符"数依赖字号：**N字符 = N × 字号pt值**。
+
+- 24pt = 2 × 12pt（小四号的 2 字符）
+- 21pt = 2 × 10.5pt（五号的 2 字符）
+- 如果 paragraph-stats 中出现多种首行缩进值，需结合该段落的字号判断哪个是正确的"2字符"
+- spec.md 中应同时写出字符数和 pt 值：如"首行缩进 2 字符（24pt，基于小四号）"
+
 ### 3. 写出 `spec.md`
 
 每条规则必须具体可执行。单位统一：边距用 `cm`，段距用 `pt`，字号写成 `小四（12pt）`。保留来源信息。无法确认的项放进"待确认项"。
 
+#### 行距格式要求
+
+行距必须同时记录**模式**和**数值**，二者缺一不可：
+
+| 写法 | 含义 | batch-check 对应 |
+|------|------|-----------------|
+| 固定值 20pt | 精确 20pt | `{"mode": "exact", "value": 20}` |
+| 最小值 20pt | 至少 20pt | `{"mode": "at_least", "value": 20}` |
+| 多倍行距 1.5 | 1.5 倍行距 | `{"mode": "multiple", "value": 1.5}` |
+
+- `paragraph-stats` 输出格式为 `at_least:20.0`、`exact:17.0`、`multiple:1.5`，冒号前就是模式
+- `query-word-style` 输出中 `line_spacing` 字段也包含模式信息
+- **如果样式定义的模式和实际段落的模式不一致**（如样式定义 `exact` 但实际段落 `at_least`），必须标记为冲突
+- **禁止写"行距 20pt"这种省略模式的写法** — 下游 batch-check 无法执行
+
 ### 4. 自评
 
-完成后建议调用 `evaluate-spec` 做覆盖性和可执行性自评。
+完成后**必须**调用 `evaluate-spec` 做覆盖性和可执行性自评。自评不通过的项必须修订后才能交付。

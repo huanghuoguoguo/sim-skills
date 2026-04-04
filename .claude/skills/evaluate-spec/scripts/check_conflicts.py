@@ -15,6 +15,9 @@ if str(libs_dir) not in sys.path:
 from spec_rules import parse_font_size_signals, parse_heading
 from utils import resolve_path, write_json_output
 
+LINE_SPACING_MODE_KEYWORDS = {"固定值", "最小值", "多倍行距", "exact", "at_least", "multiple"}
+LINE_SPACING_VALUE_RE = re.compile(r"行距[^|]*?(\d+\.?\d*)\s*pt", re.IGNORECASE)
+
 
 def check_conflicts(path: str | Path) -> dict:
     spec_path = Path(path)
@@ -74,6 +77,26 @@ def check_conflicts(path: str | Path) -> dict:
                 "examples": assignments,
             }
         )
+
+    # Check line_spacing completeness: lines mentioning 行距 with a pt value
+    # but no mode keyword are incomplete
+    for line_number, raw_line in enumerate(lines, 1):
+        if LINE_SPACING_VALUE_RE.search(raw_line):
+            line_lower = raw_line.lower()
+            has_mode = any(kw in raw_line for kw in LINE_SPACING_MODE_KEYWORDS) or \
+                       any(kw in line_lower for kw in {"exact", "at_least", "multiple"})
+            if not has_mode:
+                conflicts.append(
+                    {
+                        "line_number": line_number,
+                        "context": " / ".join(headings[level] for level in sorted(headings)),
+                        "text": raw_line.strip(),
+                        "type": "line_spacing_mode_missing",
+                        "reasons": [
+                            "行距规则缺少模式（固定值/最小值/多倍行距），下游 batch-check 无法执行"
+                        ],
+                    }
+                )
 
     return {
         "spec_path": str(spec_path),

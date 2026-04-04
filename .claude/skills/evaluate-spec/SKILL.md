@@ -24,9 +24,13 @@ description: "Use this skill to evaluate a spec.md for quality before user revie
 ## 辅助诊断脚本
 
 - `scripts/check_structure.py <spec.md>` — 检查核心主题是否覆盖
-- `scripts/check_conflicts.py <spec.md>` — 检查明显内部冲突（如"小四 vs 10.5pt"）
+- `scripts/check_conflicts.py <spec.md>` — 检查明显内部冲突（如"小四 vs 10.5pt"、行距缺少模式）
 
-如果仍可访问上游源文件，可进一步做程序化复核：
+以上两个脚本**必须运行**。
+
+## 程序化复核（必须执行）
+
+用上游源文件做交叉验证，**不是可选步骤**：
 
 ```bash
 # 1. 用 paragraph-stats 采样正文段落
@@ -41,7 +45,7 @@ python3 .claude/skills/evaluate-spec/scripts/check_body_consistency.py \
   --evidence evidence.json --checks checks.json
 ```
 
-**标题规则也应做类似验证**：对每级标题调用 `paragraph-stats --style-hint "heading N"`，比对实际段落的字体/字号与 spec.md 中的规则是否一致。样式定义和实际段落不一致是中文模板中的常见问题。
+**标题规则也必须验证**：对每级标题调用 `paragraph-stats --style-hint "heading N"`，比对实际段落的字体/字号/行距与 spec.md 中的规则是否一致。
 
 ## 输出
 

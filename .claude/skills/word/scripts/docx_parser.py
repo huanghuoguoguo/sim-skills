@@ -208,6 +208,30 @@ def extract_layout(document: Document) -> dict[str, Any]:
     return layout
 
 
+def _extract_field_code_text(paragraph) -> str:
+    """Extract visible text from field codes (e.g. MACROBUTTON) in a paragraph.
+
+    Many Chinese thesis templates use MACROBUTTON field codes for placeholder
+    text in headers.  ``paragraph.text`` does not include the display text of
+    these fields, so we fall back to raw XML parsing.
+    """
+    from lxml import etree
+    nsmap = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    parts: list[str] = []
+    in_field = False
+    for elem in paragraph._element.iter():
+        tag = etree.QName(elem).localname if isinstance(elem.tag, str) else ""
+        if tag == "fldChar":
+            fld_type = elem.get(etree.QName(nsmap["w"], "fldCharType"))
+            if fld_type == "begin":
+                in_field = True
+            elif fld_type == "end":
+                in_field = False
+        elif tag == "t" and not in_field:
+            parts.append(elem.text or "")
+    return "".join(parts).strip()
+
+
 def extract_headers_footers(document: Document, hf_type: str) -> list[dict]:
     """提取页眉或页脚内容。
 
@@ -220,13 +244,18 @@ def extract_headers_footers(document: Document, hf_type: str) -> list[dict]:
     """
     result = []
     for i, section in enumerate(document.sections):
-        # 获取页眉或页脚 - try primary attribute first
-        hf = getattr(section, f"{hf_type}_part", None)
+        hf = getattr(section, hf_type, None)
         if hf is None:
-            # Fallback to internal attribute (some python-docx versions)
-            hf = getattr(section, f"_{hf_type}", None)
+            continue
 
-        if hf is None:
+        if hf.is_linked_to_previous and i > 0:
+            result.append({
+                "type": hf_type,
+                "section_index": i,
+                "linked_to_previous": True,
+                "paragraphs": [],
+                "text": "",
+            })
             continue
 
         paragraphs = []
@@ -236,6 +265,8 @@ def extract_headers_footers(document: Document, hf_type: str) -> list[dict]:
             para_text = getattr(para, "text", "")
             if para_text:
                 para_text = para_text.strip()
+            if not para_text:
+                para_text = _extract_field_code_text(para)
             if para_text:
                 texts.append(para_text)
             paragraphs.append({
@@ -244,13 +275,13 @@ def extract_headers_footers(document: Document, hf_type: str) -> list[dict]:
                 "style_name": getattr(getattr(para, "style", None), "name", None),
             })
 
-        if paragraphs or texts:
-            result.append({
-                "type": hf_type,
-                "section_index": i,
-                "paragraphs": paragraphs,
-                "text": " | ".join(texts),
-            })
+        result.append({
+            "type": hf_type,
+            "section_index": i,
+            "linked_to_previous": False,
+            "paragraphs": paragraphs,
+            "text": " | ".join(texts),
+        })
 
     return result
 

@@ -9,4 +9,7 @@ spec.json
 *.docx
 *.dotm
 *.pdf
-.claude/settings.local.json1
+.claude/*.json
+.claude/plans
+temp/
+spec.md
