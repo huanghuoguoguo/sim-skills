@@ -26,7 +26,7 @@ description: "Use this skill to read plain text content from .txt, .md, or .docx
 ## 命令格式
 
 ```bash
-python3 .claude/skills/read-text/scripts/run.py <file_path>
+python3 -m sim_docs read-text <file_path>
 ```
 
 **参数说明**：
@@ -44,5 +44,5 @@ python3 .claude/skills/read-text/scripts/run.py <file_path>
 
 ## 相关文件
 
-- 执行脚本：`.claude/skills/read-text/scripts/run.py`
+- CLI 入口：`sim_docs/cli.py`
 - 依赖库：`.claude/skills/__libs__/text_sources.py`（文本读取）

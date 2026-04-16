@@ -20,13 +20,13 @@ Adapted from Anthropic's official docx skill. This is a structural validator, no
 
 ```bash
 # Validate a .docx file
-python3 .claude/skills/validate-word/scripts/run.py <file.docx>
+python3 -m sim_docs validate <file.docx>
 
 # Validate with auto-repair
-python3 .claude/skills/validate-word/scripts/run.py <file.docx> --auto-repair
+python3 -m sim_docs validate <file.docx> --auto-repair
 
 # Verbose output
-python3 .claude/skills/validate-word/scripts/run.py <file.docx> -v
+python3 -m sim_docs validate <file.docx> -v
 ```
 
 ## What It Validates

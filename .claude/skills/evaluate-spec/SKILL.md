@@ -23,10 +23,15 @@ description: "Use this skill to evaluate a spec.md for quality before user revie
 
 ## 辅助诊断脚本
 
-- `scripts/check_structure.py <spec.md>` — 检查核心主题是否覆盖
-- `scripts/check_conflicts.py <spec.md>` — 检查明显内部冲突（如"小四 vs 10.5pt"、行距缺少模式）
+```bash
+# 检查核心主题是否覆盖
+python3 -m sim_docs spec-check --mode structure <spec.md>
 
-以上两个脚本**必须运行**。
+# 检查明显内部冲突（如"小四 vs 10.5pt"、行距缺少模式）
+python3 -m sim_docs spec-check --mode conflicts <spec.md>
+```
+
+以上两个检查**必须运行**。
 
 ## 程序化复核（必须执行）
 
@@ -34,18 +39,18 @@ description: "Use this skill to evaluate a spec.md for quality before user revie
 
 ```bash
 # 1. 用 paragraph-stats 采样正文段落
-python3 .claude/skills/paragraph-stats/scripts/run.py <file.docx> \
+python3 -m sim_docs stats <file.docx> \
   --style-hint normal --min-length 20 --require-body-shape \
   --output evidence.json
 
 # 2. Agent 根据 spec.md 构造正文相关的 check 指令 -> checks.json
 
 # 3. 比对正文规则与实际分布
-python3 .claude/skills/evaluate-spec/scripts/check_body_consistency.py \
+python3 -m sim_docs spec-check --mode body-consistency \
   --evidence evidence.json --checks checks.json
 ```
 
-**标题规则也必须验证**：对每级标题调用 `paragraph-stats --style-hint "heading N"`，比对实际段落的字体/字号/行距与 spec.md 中的规则是否一致。
+**标题规则也必须验证**：对每级标题调用 `python3 -m sim_docs stats --style-hint "heading N"`，比对实际段落的字体/字号/行距与 spec.md 中的规则是否一致。
 
 ## 输出
 

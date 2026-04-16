@@ -33,7 +33,7 @@ parse-word (共享解析能力)
 ### 步骤 2：调用技能
 
 ```bash
-python3 .claude/skills/compare-docs/scripts/run.py <reference_path> <target_path>
+python3 -m sim_docs compare <reference_path> <target_path> [--report diff_report.md]
 ```
 
 ### 步骤 3：处理输出
@@ -45,7 +45,7 @@ python3 .claude/skills/compare-docs/scripts/run.py <reference_path> <target_path
 ## 命令格式
 
 ```bash
-python3 .claude/skills/compare-docs/scripts/run.py <reference_path> <target_path> [--output <output.json>]
+python3 -m sim_docs compare <reference_path> <target_path> [--output <output.json>] [--report <report.md>]
 ```
 
 **参数说明**：
@@ -81,5 +81,5 @@ python3 .claude/skills/compare-docs/scripts/run.py <reference_path> <target_path
 
 ## 相关文件
 
-- 执行脚本：`.claude/skills/compare-docs/scripts/run.py`
-- 解析能力：`.claude/skills/parse-word/scripts/run.py`
+- CLI 入口：`sim_docs/cli.py`
+- 解析能力：`sim_docs/service.py`

@@ -20,5 +20,5 @@ description: "Use this skill to render a specific page of a Word document as a P
 命令：
 
 ```bash
-python3 .claude/skills/render-word-page/scripts/run.py <file_path> --page <page_num> --output <image.png>
+python3 -m sim_docs render <file_path> --page <page_num> --output <image.png>
 ```

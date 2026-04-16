@@ -12,7 +12,7 @@ description: "Use this skill to filter paragraphs by style/content and compute p
 ## 命令
 
 ```bash
-python3 .claude/skills/paragraph-stats/scripts/run.py <facts.json|file.docx> [options]
+python3 -m sim_docs stats <facts.json|file.docx> [options]
 ```
 
 ## 参数

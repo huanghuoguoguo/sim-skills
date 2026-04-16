@@ -18,19 +18,16 @@ Extract text, tables, and structural information from PDF files.
 
 ```bash
 # Extract text from all pages
-python3 .claude/skills/read-pdf/scripts/run.py <file.pdf>
+python3 -m sim_docs read-pdf <file.pdf>
 
 # Extract text from specific pages
-python3 .claude/skills/read-pdf/scripts/run.py <file.pdf> --pages 1-5
+python3 -m sim_docs read-pdf <file.pdf> --pages 1-5
 
 # Extract tables
-python3 .claude/skills/read-pdf/scripts/run.py <file.pdf> --tables
-
-# Convert pages to images
-python3 .claude/skills/read-pdf/scripts/run.py <file.pdf> --images --output-dir ./pages
+python3 -m sim_docs read-pdf <file.pdf> --tables
 
 # Full extraction (text + tables + structure)
-python3 .claude/skills/read-pdf/scripts/run.py <file.pdf> --all --output result.json
+python3 -m sim_docs read-pdf <file.pdf> --all --output result.json
 ```
 
 ## Output Structure

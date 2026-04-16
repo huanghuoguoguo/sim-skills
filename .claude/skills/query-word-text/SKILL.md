@@ -16,5 +16,5 @@ description: "Use this skill to search for paragraphs in a Word document by keyw
 命令：
 
 ```bash
-python3 .claude/skills/query-word-text/scripts/run.py <file_path> --keyword <keyword> [--output <output.json>]
+python3 -m sim_docs query-text <file_path> --keyword <keyword> [--output <output.json>]
 ```

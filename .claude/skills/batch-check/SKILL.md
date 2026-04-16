@@ -13,10 +13,10 @@ description: "Use this skill to compare document facts against expected formatti
 
 ```bash
 # 查看支持的 check 类型和字段
-python3 .claude/skills/batch-check/scripts/run.py --schema
+python3 -m sim_docs check --schema
 
 # 执行比对
-python3 .claude/skills/batch-check/scripts/run.py <facts.json|file.docx> <checks.json> [--output result.json]
+python3 -m sim_docs check <facts.json|file.docx> <checks.json> [--output result.json]
 ```
 
 - `facts`: parse-word 输出的 JSON，或直接传 .docx/.dotm（内部自动解析）

@@ -20,16 +20,16 @@ Adapted from Anthropic's official docx skill. This is a read-only debugging tool
 
 ```bash
 # Unpack to directory (pretty-printed XML)
-python3 .claude/skills/inspect-word-xml/scripts/run.py <file.docx> --output-dir unpacked/
+python3 -m sim_docs inspect <file.docx> --output-dir unpacked/
 
 # Unpack and show specific XML file
-python3 .claude/skills/inspect-word-xml/scripts/run.py <file.docx> --show word/document.xml
+python3 -m sim_docs inspect <file.docx> --show word/document.xml
 
 # Unpack and list all XML files
-python3 .claude/skills/inspect-word-xml/scripts/run.py <file.docx> --list
+python3 -m sim_docs inspect <file.docx> --list
 
 # Merge adjacent runs for cleaner XML (default: on)
-python3 .claude/skills/inspect-word-xml/scripts/run.py <file.docx> --merge-runs false --output-dir unpacked/
+python3 -m sim_docs inspect <file.docx> --merge-runs false --output-dir unpacked/
 ```
 
 ## Output

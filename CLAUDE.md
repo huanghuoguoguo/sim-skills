@@ -23,82 +23,103 @@ Tools are generic and document-type-agnostic. The Agent decides what to check, t
 
 ## Core Commands
 
+### Unified CLI (sim-docs)
+
+The recommended way to interact with document tools is via the unified `sim-docs` CLI:
+
 ```bash
 # Parse Word document to structured facts
-python3 .claude/skills/parse-word/scripts/run.py <file.docx> [--output facts.json]
+python3 -m sim_docs parse <file.docx> [--output facts.json]
 
 # Query matching paragraphs by keyword
-python3 .claude/skills/query-word-text/scripts/run.py <file.docx> --keyword "宋体"
+python3 -m sim_docs query-text <file.docx> --keyword "宋体"
 
 # Query normalized style properties
-python3 .claude/skills/query-word-style/scripts/run.py <file.docx> --style "Heading 1"
+python3 -m sim_docs query-style <file.docx> --style "Heading 1"
 
 # Render a page for visual review
-python3 .claude/skills/render-word-page/scripts/run.py <file.docx> --page 1 --output page1.png
+python3 -m sim_docs render <file.docx> --page 1 --output page1.png
 
 # Batch check: view supported check types
-python3 .claude/skills/batch-check/scripts/run.py --schema
+python3 -m sim_docs check --schema
 
 # Batch check: compare facts against check instructions
-python3 .claude/skills/batch-check/scripts/run.py <facts.json|file.docx> <checks.json> [--output result.json]
+python3 -m sim_docs check <file.docx> <checks.json> [--output result.json]
 
 # Paragraph stats: filter and compute distributions
-python3 .claude/skills/paragraph-stats/scripts/run.py <facts.json|file.docx> [--style-hint normal] [--min-length 20] [--require-body-shape]
+python3 -m sim_docs stats <file.docx> [--style-hint normal] [--min-length 20] [--require-body-shape]
 
+# Compare two Word documents
+python3 -m sim_docs compare <reference.docx> <target.docx> [--output diff.json] [--report diff_report.md]
+
+# Extract text/tables from PDF
+python3 -m sim_docs read-pdf <file.pdf> [--pages 1-5] [--tables] [--all]
+
+# Read text from .txt/.md/.docx files
+python3 -m sim_docs read-text <file.txt>
+
+# Validate Word document XML structure
+python3 -m sim_docs validate <file.docx> [--auto-repair] [-v]
+
+# Inspect raw XML of Word document
+python3 -m sim_docs inspect <file.docx> [--output-dir unpacked/] [--show word/document.xml] [--list]
+```
+
+### Legacy Skill Scripts
+
+The following legacy scripts remain available for backward compatibility:
+
+```bash
 # Diagnose obvious spec conflicts / missing sections
 python3 .claude/skills/evaluate-spec/scripts/check_conflicts.py <spec.md>
 python3 .claude/skills/evaluate-spec/scripts/check_structure.py <spec.md>
 
 # Compare body rules against paragraph evidence
 python3 .claude/skills/evaluate-spec/scripts/check_body_consistency.py --evidence <evidence.json> --checks <checks.json>
-
-# Compare two Word documents
-python3 .claude/skills/compare-docs/scripts/run.py <reference.docx> <target.docx> [--output diff.json] [--report diff_report.md]
-
-# Extract text/tables from PDF
-python3 .claude/skills/read-pdf/scripts/run.py <file.pdf> [--pages 1-5] [--tables] [--all] [--output result.json]
-
-# Validate Word document XML structure
-python3 .claude/skills/validate-word/scripts/run.py <file.docx> [--auto-repair] [-v]
-
-# Inspect raw XML of Word document
-python3 .claude/skills/inspect-word-xml/scripts/run.py <file.docx> [--output-dir unpacked/] [--show word/document.xml] [--list]
 ```
 
 ## Skill Layout
 
 ```text
+sim_docs/                       # Unified document service layer
+├── __init__.py                 # Package exports
+├── cli.py                      # CLI entry point (python3 -m sim_docs)
+├── service.py                  # DocumentService facade
+├── cache.py                    # LRU cache for parsed documents
+├── check_engine.py             # Batch check logic
+├── stats_engine.py             # Paragraph statistics logic
+├── pdf_engine.py               # PDF extraction logic
+├── inspect_engine.py           # XML inspection logic
+├── compare_engine.py           # Document comparison logic
+├── validate_engine.py          # XSD validation logic
+├── spec_engine.py              # Spec evaluation logic
+└── adapters/
+    └── word.py                 # Adapter to docx_parser
+
 .claude/skills/
-├── batch-check/                # tool: deterministic property comparison engine
-│   └── scripts/run.py          #   --schema for self-describing capabilities
-├── paragraph-stats/            # tool: paragraph filtering + distribution stats
-│   └── scripts/run.py
-├── parse-word/                 # tool: docx/dotm -> structured facts (DocumentIR)
-├── query-word-text/            # tool: keyword -> matching paragraphs
-├── query-word-style/           # tool: style query -> normalized properties
-├── render-word-page/           # tool: page -> image
-├── read-text/                  # tool: text file/docx text reader
-├── read-pdf/                   # tool: PDF text/table extraction
-├── validate-word/              # tool: XSD schema validation + auto-repair
-├── inspect-word-xml/           # tool: unpack docx to raw XML for debugging
-├── check-thesis/               # workflow guidance: rules + document -> check report
-├── visual-check/               # workflow guidance: vision-based visual verification
-├── extract-spec/               # workflow guidance: reference files -> spec.md
-├── evaluate-spec/              # quality gate on spec.md
-│   └── scripts/
-│       ├── check_conflicts.py  # obvious contradictions in rules
-│       ├── check_body_consistency.py # compare body rules with paragraph evidence
-│       └── check_structure.py  # missing common sections
-├── compare-docs/               # workflow: document diff
+├── batch-check/SKILL.md        # workflow: property comparison
+├── paragraph-stats/SKILL.md    # workflow: paragraph statistics
+├── parse-word/SKILL.md         # workflow: docx parsing
+├── query-word-text/SKILL.md    # workflow: keyword search
+├── query-word-style/SKILL.md   # workflow: style query
+├── render-word-page/SKILL.md   # workflow: page rendering
+├── read-text/SKILL.md          # workflow: text file reading
+├── read-pdf/SKILL.md           # workflow: PDF extraction
+├── validate-word/SKILL.md      # workflow: XML validation
+├── inspect-word-xml/SKILL.md   # workflow: XML inspection
+├── compare-docs/SKILL.md       # workflow: document comparison
+├── evaluate-spec/SKILL.md      # workflow: spec quality evaluation
+├── check-thesis/SKILL.md       # workflow: thesis checking
+├── visual-check/SKILL.md       # workflow: visual verification
+├── extract-spec/SKILL.md       # workflow: spec extraction
 ├── __libs__/                   # shared Python utilities
 │   ├── utils.py                # resolve_path, write_json_output, setup_word_scripts_path
 │   ├── spec_rules.py           # font-size resolution, heading parsing
 │   ├── thesis_profiles.py      # profile loading for evaluate-spec
 │   └── text_sources.py         # text source reader
-└── word/                       # internal shared parser implementation
-    └── scripts/
-        ├── docx_parser.py      # low-level Word parser
-        └── docx_parser_models.py
+└── validate-word/scripts/      # XSD schemas for validation
+    ├── schemas/                # OOXML XSD schema files
+    └── validators/             # validator modules
 ```
 
 ## Architecture
@@ -129,10 +150,19 @@ The system uses a mixed Python/Agent approach:
 
 ## Key Modules
 
-- `.claude/skills/batch-check/scripts/run.py` - generic property comparison engine with self-describing schema
-- `.claude/skills/paragraph-stats/scripts/run.py` - paragraph filtering and distribution statistics
-- `.claude/skills/word/scripts/docx_parser.py` - low-level Word parser (Chinese/English font separation, header/footer extraction)
-- `.claude/skills/word/scripts/docx_parser_models.py` - parser dataclasses (ParagraphFact, StyleFact, HeaderFooterFact)
+- `sim_docs/service.py` - DocumentService facade with caching
+- `sim_docs/cli.py` - Unified CLI entry point (`python3 -m sim_docs`)
+- `sim_docs/cache.py` - LRU cache for parsed documents
+- `sim_docs/check_engine.py` - Batch property comparison engine
+- `sim_docs/stats_engine.py` - Paragraph filtering and distribution statistics
+- `sim_docs/pdf_engine.py` - PDF text/table extraction
+- `sim_docs/inspect_engine.py` - XML unpacking and inspection
+- `sim_docs/compare_engine.py` - Document comparison engine
+- `sim_docs/validate_engine.py` - XSD schema validation
+- `sim_docs/spec_engine.py` - Spec evaluation (conflicts, structure, body-consistency)
+- `sim_docs/adapters/word.py` - Adapter to docx_parser
+- `sim_docs/docx_parser.py` - low-level Word parser (Chinese/English font separation, header/footer extraction)
+- `sim_docs/docx_parser_models.py` - parser dataclasses (ParagraphFact, StyleFact, HeaderFooterFact)
 - `.claude/skills/__libs__/utils.py` - shared utilities (resolve_path, write_json_output, write_text_output, setup_word_scripts_path)
 - `.claude/skills/__libs__/spec_rules.py` - shared spec parsing helpers (font-size resolution, heading parsing)
 

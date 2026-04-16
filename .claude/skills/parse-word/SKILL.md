@@ -16,7 +16,7 @@ description: "Use this skill to parse .docx or .dotm files into structured facts
 命令：
 
 ```bash
-python3 .claude/skills/parse-word/scripts/run.py <file_path> [--output <output.json>]
+python3 -m sim_docs parse <file_path> [--output <output.json>]
 ```
 
 输出重点：

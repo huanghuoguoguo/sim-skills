@@ -22,5 +22,5 @@ description: "Use this skill to query the resolved (final) properties of a named
 命令：
 
 ```bash
-python3 .claude/skills/query-word-style/scripts/run.py <file_path> --style <style_name>
+python3 -m sim_docs query-style <file_path> --style <style_name>
 ```
