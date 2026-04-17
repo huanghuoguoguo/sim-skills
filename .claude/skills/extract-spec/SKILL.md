@@ -7,19 +7,21 @@ description: "Use this skill to extract formatting rules from reference material
 
 从分散的参考材料收敛成一份自然语言规则文档 `spec.md`。
 
-## 角色：调度者 + 评估者
+## 角色：调度者 + 验证者
 
-**主 Agent 不直接执行任务**，而是：
-1. 调度 subagent 执行具体提取任务
-2. 评估 subagent 输出的完整性和正确性
-3. 合并 subagent 输出到最终 spec.md
+**主 Agent 角色**：
+1. 调度 Unified Extractor Agent 执行提取
+2. 验证提取结果质量（可调用工具抽样检查）
+3. 分类处理问题（确定性错误/灰区问题/缺失上下文）
+4. 自迭代闭环（发现问题→重试→验证）
+5. 合并输出到最终 spec.md
 
 ---
 
 ## 输入
 
 - 模板文件：`.docx` / `.dotm` 或成品论文
-- 说明文档：写明格式规则的文本
+- 说明文档：写明格式规则的文本（可选）
 
 ---
 
@@ -31,320 +33,290 @@ description: "Use this skill to extract formatting rules from reference material
 python3 -m sim_docs parse <file.docx> --output facts.json
 ```
 
-### Step 2: 调度 Subagent 并行提取
+### Step 2: 调度 Unified Extractor Agent
 
-使用 Agent tool 调用：
+**主 Agent 调度单个 Agent 处理所有 section：**
 
-**font-extractor subagent:**
 ```
 Agent tool:
-  description: "提取字体规则"
+  description: "提取所有格式规则"
   prompt: |
-    [使用 font-extractor-prompt.md 模板]
+    [使用 unified-extractor-prompt.md 模板]
     
     输入文件：{file_path}
     facts 文件：{facts_path}
-    目标样式：Normal, Heading 1, Heading 2, Heading 3, Heading 4, Caption
-```
-
-**layout-extractor subagent:**
-```
-Agent tool:
-  description: "提取页面设置"
-  prompt: |
-    [使用 layout-extractor-prompt.md 模板]
     
-    输入文件：{file_path}
-    facts 文件：{facts_path}
+    # Unified Extractor 内部流程：
+    # 1. 加载 profile 获取 required sections
+    # 2. 对每个 section 执行提取 + 三源验证 + 常识检查
+    # 3. 输出 extraction_result.json
 ```
 
-**heading-extractor subagent:**
-```
-Agent tool:
-  description: "提取标题规则"
-  prompt: |
-    [使用 heading-extractor-prompt.md 模板]
-    
-    输入文件：{file_path}
-    facts 文件：{facts_path}
-```
+**Unified Extractor 输出**：`extraction_result.json`
 
-### Step 3: 评估 Subagent 输出（主 Agent 责任）
+包含所有 section 的提取数据，每个 section 都有：
+- `cross_validation.sources` 标注数据来源
+- `common_sense_check` 标注常识检查结果
+- `source` 标注主要数据来源
 
-收集所有 subagent 返回后，执行评估层逻辑：
+### Step 3: 验证提取结果（主 Agent 责任）
 
-#### 3.1 检查 status 字段
+主 Agent 读取 `extraction_result.json`，执行验证：
 
-| status | 处理 |
-|--------|------|
-| `DONE` | 继续评估 |
-| `BLOCKED` | 报告阻塞原因，等待用户指导 |
-| `NEEDS_CONTEXT` | 提示用户提供更多信息，重新 dispatch |
+#### 3.1 形式检查
 
-#### 3.2 检查 cross_validation 字段
+| 检查项 | 通过条件 | 处理 |
+|--------|----------|------|
+| status | `DONE` | 否 → NEEDS_CONTEXT 询问用户 |
+| cross_validation 存在 | ✓ | 否 → 重新 dispatch |
+| required sections 完整 | ✓ | 否 → 重新 dispatch |
+| tool_errors 为空 | ✓ | 否 → 报告异常 |
 
-**拒绝条件：**
-- `cross_validation` 缺失 → 拒绝输出，标记为流程错误
-- `cross_validation.sources` 不包含 `"paragraph_stats"` → 拒绝，要求重做
-- `cross_validation.conflicts` 非空但无 resolution → 标记为"待确认项"
+#### 3.2 内容验证（主 Agent 可调用工具）
 
-#### 3.3 检查 tool_errors 字段
+**验证边界（修订后 IRON LAW）：**
 
-**拒绝条件：**
-- `tool_errors` 非空 → 报告流程异常，列出错误详情
-- 不能忽略工具错误继续输出
+主 Agent **允许**的验证行为：
+- ✓ 读取 `extraction_result.json`
+- ✓ 调用 `stats` 抽样验证实际段落分布
+- ✓ 调用 `query-style` 验证样式定义
+- ✓ 调用 `query-text` 搜索文字说明
+- ✓ 执行质量规则检查（确定性规则）
+- ✓ 标注问题
 
-#### 3.4 检查 common_sense_check 字段
+主 Agent **禁止**的执行行为：
+- ✗ 解析原始文档
+- ✗ 从零提取规则内容
+- ✗ 自己推断缺失值
 
-**处理方式（根据 subagent 输出判断）：**
+**区分标准**：
+- 执行 = 从原始数据产生新内容 → 禁止
+- 验证 = 检查已有内容是否正确 → 允许
 
-| subagent 输出 | 处理方式 |
-|---------------|----------|
-| `common_sense_check = pass` | ✅ 继续合并 |
-| `common_sense_check = needs_revision` + 输出带 `⚠️ 待确认` 标注 | ✅ 合并输出，用户看到标注后自行修正 |
-| `common_sense_check = needs_revision` + 输出为 null 或无标注 | ❌ 拒绝，询问用户后重新 dispatch |
-
-**正确流程示例：**
+#### 3.3 抽样验证示例
 
 ```
-font-extractor 输出：
-{
-  "status": "DONE",
-  "output": {
-    "font_rule": {
-      "ascii_font": "⚠️ 待确认（模板使用 宋体）"
-    }
-  },
-  "common_sense_check": "needs_revision"
-}
+# 主 Agent 验证 font_rule
+extraction_result.font_rules.ascii_font = "宋体"
 
-主 Agent 评估：
-  ✅ 输出带标注 → 合并输出
-  
-spec.md 结果：
-  西文字体：⚠️ 待确认（模板使用 宋体）
-  
-用户看到标注后自行修正为正确值。
+# 调用工具验证（验证行为，允许）
+stats_result = run("python3 -m sim_docs stats facts.json --style-hint Normal")
+# 检查实际段落 ASCII 字体分布是否匹配
+
+# 执行质量规则检查
+if extraction_result.font_rules.ascii_font in CHINESE_FONTS:
+    # 确定性问题 → 标注（不需要推断正确值）
+   标注 = "⚠️ 待确认（模板使用 宋体）"
 ```
 
-**错误流程示例：**
+### Step 4: 问题分类处理
+
+根据验证结果分类问题：
 
 ```
-font-extractor 输出：
-{
-  "status": "NEEDS_CONTEXT",
-  "output": { "font_rule": null },
-  "common_sense_check": "needs_revision"
-}
+问题分类
+─────────────────────────────────────────────────────
 
-主 Agent 评估：
-  ❌ 输出为 null → 拒绝
-  → 询问用户："模板西文字体为宋体，正确应为？"
-  → 重新 dispatch 带用户确认值
+┌─────────────────────────────────────────┐
+│           主 Agent 验证                  │
+└─────────────────────────────────────────┘
+                    │
+                    ▼
+        ┌───────────────────────┐
+        │     问题分类           │
+        └───────────────────────┘
+                    │
+    ┌───────────────┼───────────────┐
+    │               │               │
+    ▼               ▼               ▼
+
+┌─────────┐   ┌─────────┐   ┌─────────┐
+│确定性错误│   │灰区问题 │   │缺失上下文│
+│         │   │         │   │         │
+│可自动检测│   │无法裁决 │   │无数据源 │
+│并重试   │   │需用户确认│   │需用户提供│
+└────┬────┘   └────┬────┘   └────┬────┘
+     │             │             │
+     ▼             ▼             ▼
+
+┌─────────┐   ┌─────────┐   ┌─────────┐
+│重试     │   │标注     │   │询问用户 │
+│Extractor│   │⚠️待确认 │   │获取上下文│
+│(最多2次)│   │合并输出 │   │重新dispatch│
+└─────────┘   └─────────┘   └─────────┘
 ```
 
-### Step 4: 处理拒绝情况（关键：处理循环）
+#### 4.1 确定性错误 → 重试
 
-如果任何 subagent 输出被拒绝，**主 Agent 不能自己填补缺失内容**，必须执行处理循环：
+| 确定性错误 | 处理 |
+|------------|------|
+| cross_validation 缺失 | 重新 dispatch，强制验证 |
+| required section 缺失 | 重新 dispatch，强调完整性 |
+| tool_errors 非空 | 报告异常，等待用户确认后继续 |
 
-```
-                        ┌───────────┐
-                        │  拒绝检测 │
-                        └──────┬────┘
-                               │
-                               ▼
-               ┌───────────────────────────────────┐
-               │          拒绝原因分类              │
-               └───────────────────────────────────┘
-                               │
-       ┌───────────────────────┼───────────────────────┐
-       │                       │                       │
-       ▼                       ▼                       ▼
-┌─────────────┐         ┌─────────────┐         ┌─────────────┐
-│ 流程错误    │         │ 常识冲突    │         │ 缺上下文    │
-│ cross_valid │         │ common_sense│         │ NEEDS_CONTEXT│
-│ 缺失        │         │ = needs_rev │         │             │
-└──────┬──────┘         └──────┬──────┘         └──────┬──────┘
-       │                       │                       │
-       ▼                       ▼                       ▼
-┌─────────────┐         ┌─────────────┐         ┌─────────────┐
-│重新 dispatch│         │ 询问用户    │         │ 询问用户    │
-│带强制指令   │         │ 获取正确值  │         │获取缺失上下文│
-└─────────────┘         └──────┬──────┘         └──────┬──────┘
-                               │                       │
-                               ▼                       ▼
-                        ┌─────────────┐         ┌─────────────┐
-                        │重新 dispatch│         │重新 dispatch│
-                        │带用户确认值 │         │带补充上下文 │
-                        └──────┬──────┘         └──────┬──────┘
-                               │                       │
-                               └───────────────┬───────┘
-                                               │
-                                               ▼
-                                        (循环到 Step 3)
-```
+**重试最多 2 次**，超过则标注"待用户确认项"
 
-#### 4.1 拒绝原因 → 处理方式
+#### 4.2 灰区问题 → 标注待确认
 
-| 拒绝原因 | 正确处理 | 禁止行为 |
-|----------|----------|----------|
-| `cross_validation` 缺失 | **重新 dispatch** subagent，指令中强调"必须调用 paragraph-stats 验证" | ❌ 主 Agent 自己调用 paragraph-stats |
-| `cross_validation.sources` 缺少 paragraph_stats | **重新 dispatch**，强调"必须执行三源验证" | ❌ 主 Agent 自己验证 |
-| `tool_errors` 非空 | **报告给用户**，列出错误详情，等待用户确认工具问题后继续 | ❌ 隐瞒错误继续输出 |
-| `common_sense_check = needs_revision` + 输出带标注 | ✅ **合并输出**（用户看到标注后自行修正） | ❌ 主 Agent 自己修正标注内容 |
-| `common_sense_check = needs_revision` + 输出为 null | **询问用户**，获取正确值后 **重新 dispatch** | ❌ 主 Agent 自己推断值 |
-| `status` = `NEEDS_CONTEXT` | **询问用户**，获取后 **重新 dispatch** 带补充信息 | ❌ 主 Agent 自己填补缺失内容 |
+| 灰区问题 | 处理 |
+|----------|------|
+| 西文字体为中文字体（宋体等） | 标注"⚠️ 待确认（模板使用宋体）" |
+| 样式定义与实际不一致 | 标注冲突，使用实际值 |
+| 多种字号混用 | 标注分布情况 |
 
-#### 4.2 处理循环示例
+**关键**：不自动推断正确值，只标注现状
 
-**场景：font-extractor 返回 common_sense_check = needs_revision**
+#### 4.3 缺失上下文 → 询问用户
+
+| 缺失情况 | 处理 |
+|----------|------|
+| 无文字说明验证 | 询问用户是否有格式要求文档 |
+| 模板缺少某些 section | 询问用户是否需要这些规则 |
+
+### Step 5: 自迭代闭环
 
 ```
-font-extractor 输出：
-{
-  "status": "DONE",
-  "common_sense_check": "needs_revision",
-  "common_sense_issues": ["ASCII font '宋体' 是中文字体"]
-}
+自迭代流程
+─────────────────────────────────────────────────────
 
-主 Agent 评估：
-  ❌ common_sense_check ≠ pass → 拒绝
-  
-主 Agent 正确操作：
-  1. 报告："font-extractor 检测到西文字体为中文字体（宋体）"
-  2. 询问用户："模板中西文字体应使用什么？Times New Roman？"
-  3. 用户回复："Times New Roman"
-  4. 重新 dispatch font-extractor：
-     prompt: "...西文字体已确认：Times New Roman..."
-  
-主 Agent 禁止操作：
-  ❌ 自己写："西文字体：⚠️ 待确认"
-  ❌ 自己写："西文字体：Times New Roman（推断）"
-  ❌ 直接合并输出，跳过处理循环
+Extractor Agent
+      │
+      ▼ extraction_result.json
+      │
+┌─────────────────────────────────────┐
+│          主 Agent 验证               │
+│                                     │
+│  Step 3: 形式检查 + 内容验证         │
+│  Step 4: 问题分类                   │
+└─────────────────────────────────────┘
+      │
+      ├──── Pass ────→ Step 6: 合并输出
+      │
+      ├──── 确定性错误 ────→ 重试 Extractor
+      │                         │
+      │                         ▼ extraction_result_v2.json
+      │                         │
+      │                    ┌───────────┐
+      │                    │ 再次验证  │
+      │                    │ (最多2次) │
+      │                    └───────────┘
+      │
+      ├──── 灰区问题 ────→ 标注待确认 → Step 6
+      │
+      └──── 缺失上下文 ─→ 询问用户 → 重试 Extractor
+
+迭代次数上限: 2
+超过上限: 标注"待用户确认项" → 继续合并
 ```
 
-**场景：font-extractor 返回 status = NEEDS_CONTEXT**
+### Step 6: 合并输出（通过验证后）
 
-```
-font-extractor 输出：
-{
-  "status": "NEEDS_CONTEXT",
-  "cross_validation": {
-    "text_instructions": {"found": false}
-  }
-}
-
-主 Agent 正确操作：
-  1. 报告："模板缺少明确的正文字体文字说明"
-  2. 询问用户："是否有学校格式要求文档？或正文字体应使用什么？"
-  3. 用户回复："学校要求正文宋体小四号，西文 Times New Roman"
-  4. 重新 dispatch font-extractor 带用户确认值
-  
-主 Agent 禁止操作：
-  ❌ 自己推断："正文宋体（推断）"
-  ❌ 自己写："西文字体：Times New Roman（来自英文摘要规则）"
-```
-
-#### 4.3 处理循环最多 2 次
-
-如果重新 dispatch 2 次后仍被拒绝：
-- 标记为"待用户确认项"
-- 继续合并其他通过的部分
-- 在 spec.md 中列出未解决的问题
-
----
-
-### Step 5: 合并输出（通过评估后）
-
-将各 subagent 输出合并为 spec.md：
+将 `extraction_result.json` 按 profile spec_schema section 顺序转换为 spec.md：
 
 ```markdown
 # [论文格式规范]
 
+## 来源
+- 模板文件：{file_path}
+- 解析时间：{timestamp}
+
 ## 页面设置
-[使用 layout-extractor 输出]
+[从 extraction_result.layout_rules]
 
 ## 正文
-[使用 font-extractor 的 Normal 样式输出]
+[从 extraction_result.font_rules]
 
 ## 标题
-[使用 heading-extractor 输出]
+[从 extraction_result.heading_rules，按 level 排列]
+
+## 摘要
+[从 extraction_result.abstract_rules]
+
+## 关键词
+[从 extraction_result.keyword_rules]
+
+## 图表Caption
+[从 extraction_result.caption_rules]
+
+## 参考文献
+[从 extraction_result.reference_rules]
+
+## 页眉页脚
+[从 extraction_result.header_footer_rules]
+
+## 目录
+[从 extraction_result.toc_rules]
 
 ## 待确认项
-[汇总 cross_validation.conflicts 中未解决的项]
+[汇总所有标注 ️ 的项]
 
-## 工具错误记录
-[汇总 tool_errors]
+## Optional Sections (模板未包含)
+[从 extraction_result.optional_sections]
 ```
 
-**合并原则：**
-- 只拼接 subagent 输出，**不填补缺失内容**
-- 缺失部分标注为"待确认"或"未提取"
-- 不让主 Agent 做任何推断或猜测
+**合并原则**：
+- 只拼接 extraction_result，不填补缺失内容
+- 保留所有 ️ 标注，用户自行修正
+- 不让主 Agent 推断或猜测
 
 ---
 
-## 评估层检查清单
+## 质量规则
 
-主 Agent 必须执行以下检查：
+参见 `quality-rules.md`。
 
-| 检查项 | 通过条件 | 处理方式 |
-|--------|----------|----------|
-| cross_validation 存在 | ✅ | ❌ 缺失 → 重新 dispatch |
-| cross_validation.sources 包含 paragraph_stats | ✅ | ❌ 缺失 → 重新 dispatch |
-| tool_errors 为空数组 | ✅ | ⚠️ 非空 → 报告异常，等待用户确认 |
-| common_sense_check = pass | ✅ | ⚠️ needs_revision + 带标注 → 合并输出 |
-| common_sense_check = needs_revision + 无标注 | ❌ | ❌ 询问用户后重新 dispatch |
-| status = DONE | ✅ | ❌ NEEDS_CONTEXT → 询问用户后重新 dispatch |
+**确定性规则**（主 Agent 和 Extractor 都可执行）：
+
+| 规则 | 检查 | 处理 |
+|------|------|------|
+| Rule 1 | ascii_font ∈ {宋体,黑体,楷体,仿宋} | 标注"⚠️ 待确认" |
+| Rule 2 | font_size ∉ [10pt,16pt] | 标注异常 |
+| Rule 3 | style ≠ actual | 标注冲突 |
+| Rule 4 | required field 缺失 | NEEDS_CONTEXT |
+| Rule 5 | source 未标注 | 视为流程错误 |
 
 ---
 
-## 拒绝输出示例
+## IRON LAW: 验证边界
+
+**修订版**：区分"执行"与"验证"
 
 ```
-❌ font-extractor 输出被拒绝
+主 Agent 允许的验证行为：
+─────────────────────────
+✓ 读取 extraction_result.json
+✓ 调用 stats/query-style/query-text 抽样检查
+✓ 执行确定性质量规则
+✓ 标注问题（不推断正确值）
+✓ 要求 Extractor 重试
 
-原因：
-- cross_validation.sources 缺失 "paragraph_stats"
-- common_sense_check = "needs_revision" (西文字体为宋体)
+主 Agent 禁止的执行行为：
+─────────────────────────
+✗ 解析原始文档（parse-word）
+✗ 从零提取规则内容
+✗ 自己推断缺失值（如西文字体应为 Times New Roman）
+✗ 写 spec.md 正文内容（只做标注和合并）
 
-建议：
-1. 重新 dispatch font-extractor，确保调用 paragraph-stats
-2. 搜索文字说明确认西文字体要求
+区分标准：
+─────────────────────────
+执行 = 从原始数据产生新内容
+验证 = 检查已有内容是否正确
+
+验证是允许的，执行是禁止的
 ```
 
 ---
 
-## Subagent Prompt 模板位置
+## Token 消耗对比
 
-- `font-extractor-prompt.md`
-- `layout-extractor-prompt.md`
-- `heading-extractor-prompt.md`
+| 架构 | Token | 验证者 |
+|------|-------|--------|
+| 旧（9 并行 subagent） | ~180k | 无 |
+| 新（1 Extractor + 主Agent验证） | ~40k | 主 Agent |
 
 ---
 
-## ⚡ IRON LAW: 主 Agent 不执行任务
+## Prompt 模板位置
 
-主 Agent 只负责：
-- 调度 subagent
-- 评估 subagent 输出
-- 合并输出（拼接，不填补）
-- 询问用户获取上下文
-- 重新 dispatch 带修正指令
-
-**禁止主 Agent 直接调用工具：**
-- ❌ `query-word-style`
-- ❌ `paragraph-stats`
-- ❌ `query-word-text`
-- ❌ 任何解析或查询工具
-
-**禁止主 Agent 自己填补内容：**
-- ❌ 自己推断缺失的字体值
-- ❌ 自己写"待确认"的具体内容
-- ❌ 自己决定如何处理 common_sense 问题
-- ❌ 绕过 NEEDS_CONTEXT 直接写输出
-
-**当 subagent 返回"做不到"时：**
-- 必须询问用户
-- 或重新 dispatch 明确指令
-- 不能自己动手做
+- `unified-extractor-prompt.md` - Unified Extractor Agent prompt
+- `quality-rules.md` - 确定性质量规则定义

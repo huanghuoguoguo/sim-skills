@@ -26,61 +26,71 @@ Skills are the building blocks for document formatting workflows. They follow an
 
 ## Subagent Architecture
 
-Workflow skills (`extract-spec`, `evaluate-spec`, `check-thesis`) use a **two-layer architecture**:
+Workflow skills (`extract-spec`) now use a **Unified Extractor + Main Agent Validation** architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Main Agent (调度者 + 评估者)                      │
+│                  Main Agent (调度者 + 验证者)                           │
 │                                                                         │
 │  责任：                                                                  │
-│  1. 调度 subagent 执行具体任务                                           │
-│  2. 评估 subagent 输出的完整性和正确性                                   │
-│  3. 合并输出到最终产物                                                   │
+│  1. 调度 Unified Extractor Agent 执行提取                               │
+│  2. 验证提取结果质量（可调用工具抽样检查）                               │
+│  3. 分类处理问题（确定性错误/灰区问题/缺失上下文）                       │
+│  4. 自迭代闭环（发现问题→重试→验证）                                    │
+│  5. 合并输出到最终 spec.md                                              │
 │                                                                         │
-│  禁止：                                                                  │
-│  - 直接执行 parse-word, query-word-style, paragraph-stats               │
-│  - 自己评判自己                                                          │
-│  - 跳过评估层检查                                                        │
+│  允许的验证行为：                                                        │
+│  ✓ 读取 extraction_result.json                                          │
+│  ✓ 调用 stats/query-style/query-text 抽样检查                          │
+│  ✓ 执行确定性质量规则                                                   │
+│  ✓ 标注问题                                                              │
+│                                                                         │
+│  禁止的执行行为：                                                        │
+│  ✗ 解析原始文档                                                         │
+│  ✗ 从零提取规则内容                                                     │
+│  ✗ 自己推断缺失值                                                       │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     │ Agent tool 调用
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                          Subagent (执行者)                              │
+│                    Unified Extractor Agent                             │
 │                                                                         │
 │  Prompt 模板文件：                                                       │
-│  - font-extractor-prompt.md    (字体规则提取，三源验证)                  │
-│  - layout-extractor-prompt.md  (页面设置提取)                           │
-│  - heading-extractor-prompt.md (标题规则提取)                           │
-│  - evaluator-prompt.md         (spec.md 评估，强制检查顺序)             │
-│  - rule-checker-prompt.md      (确定性规则检查，完整性回溯)             │
-│  - semantic-checker-prompt.md  (语义规则检查)                           │
+│  - unified-extractor-prompt.md (所有 section 提取，内部验证)            │
+│  - quality-rules.md           (确定性质量规则定义)                      │
+│                                                                         │
+│  内部执行：                                                              │
+│  - 三源验证（style + stats + text）                                     │
+│  - 常识检查（西文字体≠中文字体）                                         │
+│  - 输出 extraction_result.json                                          │
 │                                                                         │
 │  输出格式（标准化）：                                                    │
-│  - status: "DONE" | "BLOCKED" | "NEEDS_CONTEXT"                        │
-│  - output: 任务输出                                                      │
-│  - cross_validation: 交叉验证记录                                        │
-│  - tool_errors: 工具错误列表（必须报告）                                 │
+│  - status: "DONE" | "NEEDS_CONTEXT"                                    │
+│  - output: 所有 section 提取数据                                        │
+│  - cross_validation: 各 section 验证记录                                │
+│  - tool_errors: 工具错误列表                                            │
 │  - common_sense_check: "pass" | "needs_revision"                       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**关键设计：主 Agent 不直接执行任务**
+**关键设计：验证边界（IRON LAW 修订）**
 
 | 方面 | 旧架构 | 新架构 |
 |------|--------|--------|
-| 任务执行 | 主 Agent 直接调用工具 | Subagent 执行，主 Agent 调度 |
-| 错误捕捉 | 无评估层，错误静默发生 | 主 Agent 检查 subagent 输出 |
-| 上下文隔离 | 所有任务同一上下文 | 每个任务独立上下文 |
-| 流程控制 | SKILL.md 是指导 | SKILL.md 是调度协议 |
+| 任务执行 | 9个并行 subagent | 1个 Unified Extractor |
+| Token消耗 | ~180k | ~40k |
+| 验证者 | 无（主Agent形式检查） | 主Agent（可调用工具验证） |
+| 自迭代 | 无（用户发现问题） | 有（最多2次重试） |
+| 流程控制 | SKILL.md 调度协议 | SKILL.md 验证协议 |
 
-**评估层检查（主 Agent 必须执行）：**
+**问题分类处理：**
 
-| 检查项 | 通过条件 | 拒绝后果 |
-|--------|----------|----------|
-| cross_validation 存在 | ✅ | ❌ 拒绝，要求重做 |
-| tool_errors 为空 | ✅ | ⚠️ 报告异常 |
-| common_sense_check = pass | ✅ | ❌ 拒绝，要求修正 |
+| 问题类型 | 处理方式 |
+|----------|----------|
+| 确定性错误（cross_validation缺失） | 重试 Extractor（最多2次） |
+| 灰区问题（西文字体为中文字体） | 标注"⚠️ 待确认"，不推断正确值 |
+| 缺失上下文（无文字说明） | 询问用户，重新 dispatch |
 
 ## Standardized Subagent Output Format
 
