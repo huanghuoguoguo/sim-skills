@@ -76,25 +76,64 @@ python3 -m sim_docs spec-check --mode body-consistency --evidence <evidence.json
 
 ```text
 sim_docs/                       # Unified document service layer
-├── __init__.py                 # Package exports
-├── cli.py                      # CLI entry point (python3 -m sim_docs)
-├── service.py                  # DocumentService facade
-├── cache.py                    # LRU cache for parsed documents
-├── docx_parser.py              # Low-level Word parser (CJK/ASCII font separation)
-├── docx_parser_models.py       # Parser dataclasses (ParagraphFact, StyleFact)
-├── check_engine.py             # Batch check logic
-├── stats_engine.py             # Paragraph statistics logic
-├── pdf_engine.py               # PDF extraction logic
-├── inspect_engine.py           # XML inspection logic
-├── compare_engine.py           # Document comparison logic
-├── validate_engine.py          # XSD validation logic
-├── spec_engine.py              # Spec evaluation logic
-├── adapters/
-│   └── word.py                 # Adapter to docx_parser
-└── tests/
-    ├── test_cache.py           # Cache tests
-    ├── test_spec_engine.py     # Spec engine tests
-    └── test_stats_engine.py    # Stats engine tests
+├── __init__.py                 # Package exports (DocumentService, models)
+├── __main__.py                 # CLI entry (python3 -m sim_docs)
+├── api.py                      # Namespace facade (api.word, api.analysis, etc.)
+├── service.py                  # Deprecated DocumentService wrapper (use api instead)
+│
+├── core/                       # Infrastructure (no domain knowledge)
+│   ├── cache.py                # LRU cache for parsed documents
+│   ├── paths.py                # Path resolution + glob
+│   ├── io.py                   # JSON/text output helpers
+│   ├── helpers.py              # normalized(), values_close()
+│   └── soffice.py              # LibreOffice subprocess helper
+│
+├── word/                       # Word (.docx/.dotm) domain
+│   ├── parser.py               # Low-level Word parser (CJK/ASCII font separation)
+│   ├── models.py               # Parser dataclasses (ParagraphFact, StyleFact, etc.)
+│   ├── adapter.py              # Parser facade with path resolution
+│   ├── render.py               # Page rendering via LibreOffice + PyMuPDF
+│   ├── inspect.py              # XML unpacking + inspection
+│   ├── compare.py              # Document comparison + diff report
+│   └── validate/
+│       ├── __init__.py         # validate_document entry point
+│       ├── base.py             # BaseSchemaValidator class
+│       ├── docx.py             # DOCXSchemaValidator
+│       └── schemas/            # Vendored OOXML XSD schemas
+│
+├── pdf/extract.py              # PDF text/table extraction
+├── text/read.py                # .txt/.md/.docx text reading
+│
+├── analysis/                   # Document-agnostic analysis
+│   ├── checks.py               # Batch check engine
+│   └── stats.py                # Paragraph filtering + statistics
+│
+├── spec/                       # Spec.md evaluation
+│   ├── engine.py               # check_conflicts/structure/body-consistency/common-sense
+│   ├── rules.py                # Font-size parsing, heading helpers
+│   └── profiles.py             # Thesis profile configuration
+│
+├── cli/                        # CLI with auto-registration
+│   ├── main.py                 # Explicit COMMANDS registry
+│   └── commands/
+│       ├── _base.py            # write_output, Command protocol
+│       ├── parse.py
+│       ├── query.py            # query-style + query-text
+│       ├── check.py
+│       ├── stats.py
+│       ├── render.py
+│       ├── validate.py
+│       ├── inspect.py
+│       ├── compare.py
+│       ├── read.py             # read-text + read-pdf
+│       └── spec.py             # spec-check --mode
+│
+└── tests/                      # Mirrors source layout
+    ├── core/
+    ├── word/
+    ├── analysis/
+    ├── spec/
+    └── cli/
 
 .claude/skills/
 ├── batch-check/SKILL.md        # workflow: property comparison
@@ -150,22 +189,21 @@ The system uses a mixed Python/Agent approach:
 
 ## Key Modules
 
-- `sim_docs/service.py` - DocumentService facade with caching
-- `sim_docs/cli.py` - Unified CLI entry point (`python3 -m sim_docs`)
-- `sim_docs/cache.py` - LRU cache for parsed documents
-- `sim_docs/check_engine.py` - Batch property comparison engine
-- `sim_docs/stats_engine.py` - Paragraph filtering and distribution statistics
-- `sim_docs/pdf_engine.py` - PDF text/table extraction
-- `sim_docs/inspect_engine.py` - XML unpacking and inspection
-- `sim_docs/compare_engine.py` - Document comparison engine
-- `sim_docs/validate_engine.py` - XSD schema validation
-- `sim_docs/spec_engine.py` - Spec evaluation (conflicts, structure, body-consistency)
-- `sim_docs/adapters/word.py` - Adapter to docx_parser
-- `sim_docs/docx_parser.py` - low-level Word parser (Chinese/English font separation, header/footer extraction)
-- `sim_docs/docx_parser_models.py` - parser dataclasses (ParagraphFact, StyleFact, HeaderFooterFact)
-- `.claude/skills/__libs__/utils.py` - shared utilities (resolve_path, write_json_output, write_text_output, setup_word_scripts_path)
-- `.claude/skills/__libs__/spec_rules.py` - shared spec parsing helpers (font-size resolution, heading parsing)
-- `.claude/skills/__libs__/thesis_profiles.py` - thesis profile configuration (spec_schema, required sections, extractor mapping)
+- `sim_docs/api.py` - Namespace facade (api.word, api.analysis, api.pdf, api.text, api.spec)
+- `sim_docs/service.py` - Deprecated DocumentService wrapper (use api instead)
+- `sim_docs/cli/main.py` - CLI entry point with explicit COMMANDS registry (`python3 -m sim_docs`)
+- `sim_docs/core/cache.py` - LRU cache for parsed documents
+- `sim_docs/core/helpers.py` - normalized(), values_close()
+- `sim_docs/analysis/checks.py` - Batch property comparison engine
+- `sim_docs/analysis/stats.py` - Paragraph filtering and distribution statistics
+- `sim_docs/pdf/extract.py` - PDF text/table extraction
+- `sim_docs/word/inspect.py` - XML unpacking and inspection
+- `sim_docs/word/compare.py` - Document comparison engine
+- `sim_docs/word/validate/` - XSD schema validation (vendored schemas)
+- `sim_docs/spec/engine.py` - Spec evaluation (conflicts, structure, body-consistency)
+- `sim_docs/spec/profiles.py` - Thesis profile configuration (spec_schema, required sections)
+- `sim_docs/word/parser.py` - Low-level Word parser (CJK/ASCII font separation, header/footer)
+- `sim_docs/word/models.py` - Parser dataclasses (ParagraphFact, StyleFact, HeaderFooterFact)
 
 ## Thesis Profile Schema
 
