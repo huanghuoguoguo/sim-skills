@@ -42,7 +42,7 @@ description: "Use this skill when the Agent has vision capability and needs to v
 # 典型的页面选择策略
 pages_to_check = {
     "cover": 1,           # 封面
-    "toc": "query '目录'", # 目录页（先用 query-word-text 定位）
+    "toc": "query '目录'", # 目录页（先用 query-word --mode text 定位）
     "body_first": "query '第一章' or '1 引言'",  # 正文首页
     "body_middle": "total_pages // 2",            # 中间页
     "references": "query '参考文献'",             # 参考文献页
@@ -93,7 +93,7 @@ python3 -m sim_docs render <file.docx> --page <N> --output page_<N>.png
 | 工具 | 用途 |
 |------|------|
 | `render-word-page` | 渲染指定页为 PNG |
-| `query-word-text` | 定位目录、参考文献等页面位置 |
+| `query-word --mode text` | 定位目录、参考文献等页面位置 |
 | `parse-word` | 获取总页数和章节结构信息 |
 
 ## 关键约束

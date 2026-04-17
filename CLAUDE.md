@@ -21,11 +21,11 @@ Tools are generic and document-type-agnostic. The Agent decides what to check, t
 - Shared utilities live in `.claude/skills/__libs__/utils.py`
 - `evaluate-spec` may call small diagnostic scripts; these are internal gates, not user-facing upstream artifacts
 
-## Core Commands
+## CLI Reference
 
-### Unified CLI (sim-docs)
+> **Full CLI documentation**: See [CLI_REFERENCE.md](CLI_REFERENCE.md) for complete command reference, parameters, output formats, and examples.
 
-The recommended way to interact with document tools is via the unified `sim-docs` CLI:
+Quick reference:
 
 ```bash
 # Parse Word document to structured facts
@@ -37,128 +37,51 @@ python3 -m sim_docs query-text <file.docx> --keyword "宋体"
 # Query normalized style properties
 python3 -m sim_docs query-style <file.docx> --style "Heading 1"
 
-# Render a page for visual review
-python3 -m sim_docs render <file.docx> --page 1 --output page1.png
-
-# Batch check: view supported check types
-python3 -m sim_docs check --schema
+# Paragraph stats: filter and compute distributions
+python3 -m sim_docs stats <file.docx> [--style-hint normal] [--min-length 20]
 
 # Batch check: compare facts against check instructions
 python3 -m sim_docs check <file.docx> <checks.json> [--output result.json]
 
-# Paragraph stats: filter and compute distributions
-python3 -m sim_docs stats <file.docx> [--style-hint normal] [--min-length 20] [--require-body-shape]
+# Render a page for visual review
+python3 -m sim_docs render <file.docx> --page 1 --output page1.png
 
 # Compare two Word documents
-python3 -m sim_docs compare <reference.docx> <target.docx> [--output diff.json] [--report diff_report.md]
-
-# Extract text/tables from PDF
-python3 -m sim_docs read-pdf <file.pdf> [--pages 1-5] [--tables] [--all]
-
-# Read text from .txt/.md/.docx files
-python3 -m sim_docs read-text <file.txt>
+python3 -m sim_docs compare <reference.docx> <target.docx> [--report diff.md]
 
 # Validate Word document XML structure
-python3 -m sim_docs validate <file.docx> [--auto-repair] [-v]
+python3 -m sim_docs validate <file.docx> [--auto-repair]
 
-# Inspect raw XML of Word document
-python3 -m sim_docs inspect <file.docx> [--output-dir unpacked/] [--show word/document.xml] [--list]
-
-# Evaluate spec.md quality
-python3 -m sim_docs spec-check --mode conflicts <spec.md>
-python3 -m sim_docs spec-check --mode structure <spec.md>
-python3 -m sim_docs spec-check --mode body-consistency --evidence <evidence.json> --checks <checks.json>
+# Extract text/tables from PDF
+python3 -m sim_docs read-pdf <file.pdf> [--pages 1-5] [--tables]
 ```
+
+Run `python3 -m sim_docs --help` for all commands.
 
 ## Skill Layout
 
-> **Navigation:** See `.claude/skills/SKILLS_OVERVIEW.md` for a complete skill hierarchy and quick reference.
+> **Navigation**: 5 workflow skills. CLI tools documented in [CLI_REFERENCE.md](CLI_REFERENCE.md).
 
 ```text
-sim_docs/                       # Unified document service layer
-├── __init__.py                 # Package exports (DocumentService, models)
-├── __main__.py                 # CLI entry (python3 -m sim_docs)
-├── api.py                      # Namespace facade (api.word, api.analysis, etc.)
-├── service.py                  # Deprecated DocumentService wrapper (use api instead)
-│
-├── core/                       # Infrastructure (no domain knowledge)
-│   ├── cache.py                # LRU cache for parsed documents
-│   ├── paths.py                # Path resolution + glob
-│   ├── io.py                   # JSON/text output helpers
-│   ├── helpers.py              # normalized(), values_close()
-│   └── soffice.py              # LibreOffice subprocess helper
-│
-├── word/                       # Word (.docx/.dotm) domain
-│   ├── parser.py               # Low-level Word parser (CJK/ASCII font separation)
-│   ├── models.py               # Parser dataclasses (ParagraphFact, StyleFact, etc.)
-│   ├── adapter.py              # Parser facade with path resolution
-│   ├── render.py               # Page rendering via LibreOffice + PyMuPDF
-│   ├── inspect.py              # XML unpacking + inspection
-│   ├── compare.py              # Document comparison + diff report
-│   └── validate/
-│       ├── __init__.py         # validate_document entry point
-│       ├── base.py             # BaseSchemaValidator class
-│       ├── docx.py             # DOCXSchemaValidator
-│       └── schemas/            # Vendored OOXML XSD schemas
-│
-├── pdf/extract.py              # PDF text/table extraction
-├── text/read.py                # .txt/.md/.docx text reading
-│
-├── analysis/                   # Document-agnostic analysis
-│   ├── checks.py               # Batch check engine
-│   └── stats.py                # Paragraph filtering + statistics
-│
-├── spec/                       # Spec.md evaluation
-│   ├── engine.py               # check_conflicts/structure/body-consistency/common-sense
-│   ├── rules.py                # Font-size parsing, heading helpers
-│   └── profiles.py             # Thesis profile configuration
-│
-├── cli/                        # CLI with auto-registration
-│   ├── main.py                 # Explicit COMMANDS registry
-│   └── commands/
-│       ├── _base.py            # write_output, Command protocol
-│       ├── parse.py
-│       ├── query.py            # query-style + query-text
-│       ├── check.py
-│       ├── stats.py
-│       ├── render.py
-│       ├── validate.py
-│       ├── inspect.py
-│       ├── compare.py
-│       ├── read.py             # read-text + read-pdf
-│       └── spec.py             # spec-check --mode
-│
-└── tests/                      # Mirrors source layout
-    ├── core/
-    ├── word/
-    ├── analysis/
-    ├── spec/
-    └── cli/
+.claude/skills/                      # 5 workflow skills (orchestration + judgment)
+├── check-thesis/SKILL.md           # workflow: thesis format checking
+├── extract-spec/SKILL.md           # workflow: spec extraction from templates
+├── evaluate-spec/SKILL.md          # workflow: spec quality evaluation
+├── visual-check/SKILL.md           # workflow: vision-based verification
+├── openspec/SKILL.md               # meta: change lifecycle (propose/apply/archive)
+├── __libs__/                       # shared Python utilities
+│   ├── utils.py                    # resolve_path, write_json_output
+│   ├── spec_rules.py               # font-size resolution, heading parsing
+│   ├── thesis_profiles.py          # profile loading for evaluate-spec
+│   └── text_sources.py             # text source reader
+└── validate-word/scripts/          # XSD schemas for validation
+    └── schemas/                    # OOXML XSD schema files
 
-.claude/skills/
-├── batch-check/SKILL.md        # workflow: property comparison
-├── paragraph-stats/SKILL.md    # workflow: paragraph statistics
-├── parse-word/SKILL.md         # workflow: docx parsing
-├── query-word-text/SKILL.md    # workflow: keyword search
-├── query-word-style/SKILL.md   # workflow: style query
-├── render-word-page/SKILL.md   # workflow: page rendering
-├── read-text/SKILL.md          # workflow: text file reading
-├── read-pdf/SKILL.md           # workflow: PDF extraction
-├── validate-word/SKILL.md      # workflow: XML validation
-├── inspect-word-xml/SKILL.md   # workflow: XML inspection
-├── compare-docs/SKILL.md       # workflow: document comparison
-├── evaluate-spec/SKILL.md      # workflow: spec quality evaluation
-├── check-thesis/SKILL.md       # workflow: thesis checking
-├── visual-check/SKILL.md       # workflow: visual verification
-├── extract-spec/SKILL.md       # workflow: spec extraction
-├── __libs__/                   # shared Python utilities
-│   ├── utils.py                # resolve_path, write_json_output, setup_word_scripts_path
-│   ├── spec_rules.py           # font-size resolution, heading parsing
-│   ├── thesis_profiles.py      # profile loading for evaluate-spec
-│   └── text_sources.py         # text source reader
-└── validate-word/scripts/      # XSD schemas for validation
-    ├── schemas/                # OOXML XSD schema files
-    └── validators/             # validator modules
+.claude/commands/opsx/               # OpenSpec slash commands
+├── propose.md                       # /opsx:propose
+├── apply.md                         # /opsx:apply
+├── archive.md                       # /opsx:archive
+├── explore.md                       # /opsx:explore
 ```
 
 ## Architecture

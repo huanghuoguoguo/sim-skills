@@ -72,8 +72,8 @@ These require context understanding and cannot be expressed as simple property c
 
 | rule type | what to check | how to check |
 |-----------|--------------|--------------|
-| Abstract format | Word count, language, paragraph structure | `query-word-text --keyword "摘要"`, then Agent reads and judges |
-| References format | GB/T 7714 compliance, numbering, punctuation | `query-word-text --keyword "参考文献"`, then Agent validates patterns |
+| Abstract format | Word count, language, paragraph structure | `query-word --mode text --keyword "摘要"`, then Agent reads and judges |
+| References format | GB/T 7714 compliance, numbering, punctuation | `query-word --mode text --keyword "参考文献"`, then Agent validates patterns |
 | TOC structure | Heading levels, numbering scheme, dot leaders | Agent reads parsed headings and judges structure |
 | Chapter numbering | Correct sequence, format consistency | Agent checks heading text patterns |
 | Page number placement | Position, starting page | `render-word-page` for visual verification |
