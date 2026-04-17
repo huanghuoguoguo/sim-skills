@@ -214,7 +214,14 @@ class DocumentService:
             pdf_path = self._convert_to_pdf(resolved, tmpdir)
 
             # Extract page as image using PyMuPDF
-            import fitz
+            try:
+                import fitz
+            except ImportError:
+                raise ImportError(
+                    "PyMuPDF (fitz) is required for page rendering. "
+                    "Install it with: pip install PyMuPDF"
+                )
+
             doc = fitz.open(pdf_path)
 
             if page < 1 or page > len(doc):
@@ -481,7 +488,22 @@ class DocumentService:
         return str(p)
 
     def _get_facts(self, path_or_facts: str | Path | WordDocumentFacts) -> WordDocumentFacts:
-        """Get facts from path or use pre-parsed facts."""
+        """Get facts from path or use pre-parsed facts.
+
+        Supports:
+        - WordDocumentFacts object (returned directly)
+        - .docx/.dotm/.docm files (parsed)
+        - .json files (loaded as pre-parsed facts)
+        """
         if isinstance(path_or_facts, WordDocumentFacts):
             return path_or_facts
+
+        path = Path(path_or_facts).expanduser().resolve()
+
+        # Support loading pre-parsed facts from JSON
+        if path.suffix.lower() == '.json':
+            import json
+            facts_dict = json.loads(path.read_text(encoding='utf-8'))
+            return WordDocumentFacts.from_dict(facts_dict)
+
         return self.parse(path_or_facts)
