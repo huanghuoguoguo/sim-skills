@@ -29,7 +29,16 @@ Agent tool:
     [使用 evaluator-prompt.md 模板]
     
     spec.md 文件：{spec_path}
+    
+    # 加载 profile schema
+    from thesis_profiles import load_profile, get_section_rules_for_structure_check
+    profile = load_profile()
+    section_rules = get_section_rules_for_structure_check(profile)
 ```
+
+**⚠️ evaluator subagent 需要接收 profile schema：**
+- evaluator 使用 `spec-check --mode structure` 时，传入 `section_rules` 参数
+- `section_rules` 从 `profile.spec_schema.sections` 构建（仅 required sections）
 
 ### Step 2: 评估 subagent 输出（主 Agent 责任）
 
@@ -53,6 +62,10 @@ Agent tool:
 - `cross_validation.common_sense` 必须存在
 - `cross_validation.structure` 必须存在
 - `cross_validation.conflicts` 必须存在
+
+**区分 required vs optional missing sections：**
+- `missing_sections` 应仅包含 `required: true` 的 sections
+- `optional_sections_missing` 作为信息性报告（不影响评估结果）
 
 #### 2.4 检查 tool_errors 字段
 
@@ -78,10 +91,18 @@ Agent tool:
 ```
 评估结果：pass / needs_revision / blocked_user_input
 
+Profile schema: {profile_name}
+
 检查通过项：
 - common-sense check: ✅
-- structure check: ✅
+- structure check: ✅ (required sections)
 - conflicts check: ✅
+
+缺失的 Required Sections：
+- [列出 missing_required_sections]
+
+缺失的 Optional Sections (仅信息性):
+- [列出 optional_sections_missing]
 
 存在问题：
 - [列出 issues]

@@ -165,6 +165,39 @@ The system uses a mixed Python/Agent approach:
 - `sim_docs/docx_parser_models.py` - parser dataclasses (ParagraphFact, StyleFact, HeaderFooterFact)
 - `.claude/skills/__libs__/utils.py` - shared utilities (resolve_path, write_json_output, write_text_output, setup_word_scripts_path)
 - `.claude/skills/__libs__/spec_rules.py` - shared spec parsing helpers (font-size resolution, heading parsing)
+- `.claude/skills/__libs__/thesis_profiles.py` - thesis profile configuration (spec_schema, required sections, extractor mapping)
+
+## Thesis Profile Schema
+
+The `thesis_profiles.py` defines a **spec_schema** that specifies what a thesis spec must contain:
+
+```python
+DEFAULT_THESIS_PROFILE = {
+    "spec_schema": {
+        "sections": {
+            "页面设置": {"required": True, "extractor": "layout"},
+            "正文": {"required": True, "extractor": "font", "target_styles": ["Normal"]},
+            "标题": {"required": True, "extractor": "heading", "levels": [1, 2, 3, 4]},
+            "摘要": {"required": True, "extractor": "abstract"},
+            "关键词": {"required": True, "extractor": "keyword"},
+            "图表Caption": {"required": True, "extractor": "caption"},
+            "参考文献": {"required": True, "extractor": "reference"},
+            "页眉页脚": {"required": True, "extractor": "header_footer"},
+            "目录": {"required": True, "extractor": "toc"},
+            # Optional sections
+            "封面": {"required": False, "extractor": "cover"},
+            "附录": {"required": False, "extractor": "appendix"},
+            "致谢": {"required": False, "extractor": "acknowledgment"},
+        }
+    }
+}
+```
+
+Key functions in `thesis_profiles.py`:
+- `load_profile(profile_json, overrides)` - Load default profile with school-specific overrides
+- `get_required_sections(profile)` - Extract list of required section names
+- `get_section_config(profile, section_name)` - Get extractor and properties for a section
+- `get_section_rules_for_structure_check(profile)` - Build section_rules for spec_engine.check_structure()
 
 ## Engineering Boundaries
 

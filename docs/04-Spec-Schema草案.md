@@ -106,3 +106,83 @@ Agent 自评 spec.md 时检查：
 > python3 -m sim_docs spec-check --mode body-consistency --evidence evidence.json --checks checks.json
 > ```
 > 详见 `sim_docs/README.md`。
+
+## 6. Thesis Profile Schema
+
+`thesis_profiles.py` 定义 spec 提取的"契约"——哪些 sections 必须提取。
+
+### 默认 Profile
+
+```python
+DEFAULT_THESIS_PROFILE = {
+    "spec_schema": {
+        "sections": {
+            "页面设置": {"required": True, "extractor": "layout"},
+            "正文": {"required": True, "extractor": "font"},
+            "标题": {"required": True, "extractor": "heading", "levels": [1, 2, 3, 4]},
+            "摘要": {"required": True, "extractor": "abstract"},
+            "关键词": {"required": True, "extractor": "keyword"},
+            "图表Caption": {"required": True, "extractor": "caption"},
+            "参考文献": {"required": True, "extractor": "reference"},
+            "页眉页脚": {"required": True, "extractor": "header_footer"},
+            "目录": {"required": True, "extractor": "toc"},
+            # Optional sections
+            "封面": {"required": False, "extractor": "cover"},
+            "附录": {"required": False, "extractor": "appendix"},
+            "致谢": {"required": False, "extractor": "acknowledgment"},
+        }
+    }
+}
+```
+
+### 学校 Profile Override 示例
+
+学校可提供 JSON 文件覆盖默认配置：
+
+```json
+// school-tjut.json - 天津理工大学定制
+{
+  "spec_schema": {
+    "sections": {
+      "附录": {"required": true},
+      "标题": {"levels": [1, 2, 3, 4, 5]},
+      "答辩声明": {
+        "required": true,
+        "extractor": "custom",
+        "properties": ["text_format"]
+      }
+    }
+  },
+  "evaluate_spec": {
+    "section_rules": {
+      "答辩声明": ["答辩声明"]
+    }
+  }
+}
+```
+
+**覆盖效果：**
+- `附录` 变为 required（天津理工要求附录）
+- `标题` 扩展到 5 级（默认只有 1-4 级）
+- 新增 `答辩声明` section（学校特殊要求）
+
+### 使用方式
+
+```python
+from thesis_profiles import load_profile
+
+# 加载默认 profile
+profile = load_profile()
+
+# 加载学校定制 profile
+profile = load_profile(profile_json="school-tjut.json")
+```
+
+### 相关函数
+
+| 函数 | 作用 |
+|------|------|
+| `load_profile(profile_json, overrides)` | 加载 profile（默认 + 覆盖） |
+| `get_required_sections(profile)` | 获取 required sections 列表 |
+| `get_section_config(profile, section_name)` | 获取 section 配置（extractor, properties） |
+| `get_section_rules_for_structure_check(profile)` | 构建 spec_engine 使用的 section_rules |
