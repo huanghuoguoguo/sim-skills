@@ -96,3 +96,13 @@ Agent 自评 spec.md 时检查：
 3. **一致性**：属性单位是否统一，有无矛盾
 4. **可追溯**：是否标注了规则的来源（哪个文件、哪个样式）
 5. **完备性**：是否标注了待确认项
+
+---
+
+> **相关 CLI**: `sim_docs` 提供 spec 评估命令：
+> ```bash
+> python3 -m sim_docs spec-check --mode conflicts spec.md
+> python3 -m sim_docs spec-check --mode structure spec.md
+> python3 -m sim_docs spec-check --mode body-consistency --evidence evidence.json --checks checks.json
+> ```
+> 详见 `sim_docs/README.md`。
