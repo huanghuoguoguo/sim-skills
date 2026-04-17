@@ -1,8 +1,4 @@
-"""Validate engine for Word document XML structure validation.
-
-Migrated from .claude/skills/validate-word/scripts/run.py.
-Note: validators.py logic is integrated here.
-"""
+"""Word document XML validation against OOXML schemas."""
 
 from __future__ import annotations
 
@@ -10,6 +6,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
+
+from .docx import DOCXSchemaValidator
 
 
 def validate_document(
@@ -49,13 +47,6 @@ def validate_document(
 
     unpacked_dir = Path(temp_dir)
 
-    # Import validator from validate-word skill
-    validate_path = Path(__file__).resolve().parents[1] / ".claude" / "skills" / "validate-word" / "scripts"
-    if str(validate_path) not in __import__("sys").path:
-        __import__("sys").path.insert(0, str(validate_path))
-
-    from validators import DOCXSchemaValidator
-
     validator = DOCXSchemaValidator(unpacked_dir, str(path), verbose=verbose)
 
     repairs = 0
@@ -75,3 +66,6 @@ def validate_document(
         "repairs": repairs,
         "errors": errors,
     }
+
+
+__all__ = ["validate_document", "DOCXSchemaValidator"]
