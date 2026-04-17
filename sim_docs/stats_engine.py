@@ -9,7 +9,7 @@ import re
 from collections import Counter
 from typing import Any
 
-from utils import normalized
+from .utils import normalized
 
 
 LATIN_RE = re.compile(r"[A-Za-z]")

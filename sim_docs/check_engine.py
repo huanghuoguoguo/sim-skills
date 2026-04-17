@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from utils import normalized, values_close
+from .utils import normalized, values_close
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from sim_docs.docx_parser import parse_word_document
 from sim_docs.docx_parser_models import WordDocumentFacts
-from utils import resolve_path as _resolve_path_glob
+from ..utils import resolve_path as _resolve_path_glob
 
 
 class WordAdapter:

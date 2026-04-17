@@ -21,7 +21,7 @@ from .compare_engine import compare_documents, generate_diff_report
 from .validate_engine import validate_document
 from .spec_engine import check_conflicts, check_structure, check_body_consistency, check_common_sense
 
-from utils import normalized, values_close, resolve_path as _resolve_path_glob
+from .utils import normalized, values_close, resolve_path as _resolve_path_glob
 
 
 class DocumentService:
@@ -238,7 +238,7 @@ class DocumentService:
 
     def _convert_to_pdf(self, docx_path: str, outdir: str) -> str:
         """Convert .docx/.dotm to .pdf using LibreOffice."""
-        from soffice import run_soffice
+        from .soffice import run_soffice
         import subprocess
 
         run_soffice(
@@ -322,7 +322,7 @@ class DocumentService:
         """
         resolved = self._resolve_path(path)
 
-        from text_sources import read_text_source
+        from .text_sources import read_text_source
 
         text = read_text_source(resolved)
         return {
