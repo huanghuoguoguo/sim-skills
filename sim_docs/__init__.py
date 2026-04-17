@@ -21,4 +21,4 @@ from sim_docs.service import DocumentService
 from sim_docs.word.models import WordDocumentFacts, ParagraphFact, StyleFact, HeaderFooterFact
 
 __all__ = ["DocumentService", "WordDocumentFacts", "ParagraphFact", "StyleFact", "HeaderFooterFact"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

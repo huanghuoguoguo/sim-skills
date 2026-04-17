@@ -4,24 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sim-skills"
-version = "0.1.0"
-description = "MVP CLI for document formatting compliance checks"
+version = "0.2.0"
+description = "Document parsing, checking, and formatting compliance toolkit"
 requires-python = ">=3.10"
 dependencies = [
   "python-docx>=0.8.11",
+  "defusedxml>=0.7.1",
+  "lxml>=4.9.0",
 ]
 
-# Note: The main functionality is now provided via .claude/skills/
-# To install as a package (optional):
-#   pip install -e .
-# Or use skills directly:
-#   python3 .claude/skills/inspect-word/skill.py <file>
-#   python3 .claude/skills/extract-spec/skill.py <template>
-#   python3 .claude/skills/check-thesis/skill.py <thesis> <spec>
-#   python3 .claude/skills/compare-docs/skill.py <ref> <target>
+[project.optional-dependencies]
+render = ["PyMuPDF>=1.23.0"]
+
+[project.scripts]
+sim-docs = "sim_docs.cli.main:main"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+packages = ["sim_docs", "sim_docs.core", "sim_docs.word", "sim_docs.word.validate", "sim_docs.pdf", "sim_docs.text", "sim_docs.analysis", "sim_docs.spec", "sim_docs.cli", "sim_docs.cli.commands"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools.package-data]
+sim_docs = ["word/validate/schemas/**/*.xsd"]
+
+# Usage:
+#   pip install -e .                  # Install package
+#   pip install -e ".[render]"        # Install with PyMuPDF for page rendering
+#   python3 -m sim_docs parse file.docx
+#   python3 -m sim_docs check --schema
+#   python3 -m sim_docs validate file.docx --auto-repair
