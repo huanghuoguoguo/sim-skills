@@ -19,7 +19,7 @@ from .pdf_engine import extract_pdf
 from .inspect_engine import inspect_document
 from .compare_engine import compare_documents, generate_diff_report
 from .validate_engine import validate_document
-from .spec_engine import check_conflicts, check_structure, check_body_consistency
+from .spec_engine import check_conflicts, check_structure, check_body_consistency, check_common_sense
 
 from utils import normalized, values_close, resolve_path as _resolve_path_glob
 
@@ -451,6 +451,20 @@ class DocumentService:
             evidence,
             body_section_keywords=body_section_keywords,
         )
+
+    def spec_check_common_sense(self, path: str | Path) -> dict:
+        """Check font common sense violations in spec.md.
+
+        Detects when Chinese fonts are incorrectly specified as Western fonts.
+
+        Args:
+            path: Path to spec.md file.
+
+        Returns:
+            Dict with spec_path, status, conflicts, and summary.
+        """
+        resolved = self._resolve_path(path)
+        return check_common_sense(resolved)
 
     # -------------------------------------------------------------------------
     # Cache management

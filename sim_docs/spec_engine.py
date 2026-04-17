@@ -18,6 +18,10 @@ from utils import values_close
 LINE_SPACING_MODE_KEYWORDS = {"固定值", "最小值", "多倍行距", "exact", "at_least", "multiple"}
 LINE_SPACING_VALUE_RE = re.compile(r"行距[^|]*?(\d+\.?\d*)\s*pt", re.IGNORECASE)
 
+# Chinese fonts that should NOT be used as Western fonts
+CHINESE_FONT_NAMES = {"宋体", "黑体", "楷体", "仿宋", "华文宋体", "华文黑体", "华文楷体", "华文仿宋"}
+WESTERN_FONT_NAMES = {"Times New Roman", "Arial", "Calibri", "Helvetica", "Georgia", "Verdana"}
+
 
 # ---------------------------------------------------------------------------
 # Check conflicts
@@ -302,4 +306,199 @@ def check_body_consistency(
         "body_evidence_summary": summary,
         "supported_rules": supported,
         "mismatches": mismatches,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Check common sense
+# ---------------------------------------------------------------------------
+
+# Regex patterns for font detection in spec.md
+# Pattern matches font pairs like "宋体/宋体" where Chinese font appears in Western position
+# More precise patterns to avoid capturing prefix text
+
+# Pattern 1: "中文/西文" pair format - directly adjacent fonts
+FONT_PAIR_DIRECT = re.compile(
+    r"("
+    + "|".join(CHINESE_FONT_NAMES)
+    + r")\s*[/／]\s*("
+    + "|".join(CHINESE_FONT_NAMES)
+    + r")"
+)
+
+# Pattern 2: explicit format "中文：宋体，西文：宋体" or "east_asia:宋体, ascii:宋体"
+FONT_PAIR_EXPLICIT = re.compile(
+    r"(?:中文|east_asia|eastasia|中文字体)[：:]\s*("
+    + "|".join(CHINESE_FONT_NAMES | WESTERN_FONT_NAMES)
+    + r")\s*[，,]?\s*(?:西文|ascii|英文|西文字体)[：:]\s*("
+    + "|".join(CHINESE_FONT_NAMES | WESTERN_FONT_NAMES)
+    + r")",
+    re.IGNORECASE
+)
+
+# Pattern 3: reversed order "西文：宋体，中文：宋体"
+FONT_PAIR_REVERSED = re.compile(
+    r"(?:西文|ascii|英文|西文字体)[：:]\s*("
+    + "|".join(CHINESE_FONT_NAMES | WESTERN_FONT_NAMES)
+    + r")\s*[，,]?\s*(?:中文|east_asia|eastasia|中文字体)[：:]\s*("
+    + "|".join(CHINESE_FONT_NAMES | WESTERN_FONT_NAMES)
+    + r")",
+    re.IGNORECASE
+)
+
+# Pattern 4: standalone Western font declaration "西文字体：宋体" (potential issue)
+WESTERN_FONT_STANDALONE = re.compile(
+    r"(?:西文|ascii|英文|西文字体)[：:]\s*("
+    + "|".join(CHINESE_FONT_NAMES)
+    + r")",
+    re.IGNORECASE
+)
+
+
+def check_common_sense(path: str | Path) -> dict:
+    """Check font common sense violations in spec.md.
+
+    Detects when Chinese fonts are incorrectly specified as Western fonts,
+    which is a common mistake in Chinese thesis templates.
+
+    Args:
+        path: Path to spec.md file.
+
+    Returns:
+        Dict with spec_path, status, conflicts, and summary.
+    """
+    spec_path = Path(path)
+
+    # Handle file not found error gracefully
+    if not spec_path.exists():
+        return {
+            "spec_path": str(spec_path),
+            "status": "error",
+            "error": f"File not found: {spec_path}",
+            "conflicts": [],
+            "summary": {"conflict_count": 0},
+        }
+
+    try:
+        lines = spec_path.read_text(encoding="utf-8").splitlines()
+    except Exception as e:
+        return {
+            "spec_path": str(spec_path),
+            "status": "error",
+            "error": f"Failed to read file: {e}",
+            "conflicts": [],
+            "summary": {"conflict_count": 0},
+        }
+
+    conflicts = []
+    headings: dict[int, str] = {}
+
+    for line_number, raw_line in enumerate(lines, 1):
+        # Track headings for context
+        parsed = parse_heading(raw_line)
+        if parsed:
+            level, text = parsed
+            headings[level] = text
+            for stale_level in list(headings):
+                if stale_level > level:
+                    headings.pop(stale_level, None)
+            continue
+
+        context_str = " / ".join(headings[level] for level in sorted(headings))
+
+        # Pattern 1: Direct "宋体/宋体" format - both fonts are Chinese
+        for match in FONT_PAIR_DIRECT.finditer(raw_line):
+            east_asia_font = match.group(1)
+            ascii_font = match.group(2)
+
+            # This pattern only matches Chinese/Chinese pairs
+            conflicts.append({
+                "line_number": line_number,
+                "context": context_str,
+                "text": raw_line.strip(),
+                "type": "font_common_sense_conflict",
+                "reasons": [
+                    f"字体声明 '{east_asia_font}/{ascii_font}' 中，西文字体 '{ascii_font}' 是中文字体。",
+                    "中文论文西文通常使用 Times New Roman 或 Arial。",
+                    "请检查原文是否有'西文使用Times'或类似说明。"
+                ],
+                "detected": {
+                    "east_asia_font": east_asia_font,
+                    "ascii_font": ascii_font,
+                },
+            })
+
+        # Pattern 2: Explicit "中文：宋体，西文：宋体" format
+        for match in FONT_PAIR_EXPLICIT.finditer(raw_line):
+            east_asia_font = match.group(1)
+            ascii_font = match.group(2)
+
+            # Detect if Chinese font is used as Western font
+            if ascii_font in CHINESE_FONT_NAMES:
+                conflicts.append({
+                    "line_number": line_number,
+                    "context": context_str,
+                    "text": raw_line.strip(),
+                    "type": "font_common_sense_conflict",
+                    "reasons": [
+                        f"西文字体 '{ascii_font}' 是中文字体，不应作为西文字体。",
+                        "中文论文西文通常使用 Times New Roman 或 Arial。",
+                        "请检查原文是否有'西文使用Times'或类似说明。"
+                    ],
+                    "detected": {
+                        "east_asia_font": east_asia_font,
+                        "ascii_font": ascii_font,
+                    },
+                })
+
+        # Pattern 3: Reversed "西文：宋体，中文：宋体" format
+        for match in FONT_PAIR_REVERSED.finditer(raw_line):
+            ascii_font = match.group(1)
+            east_asia_font = match.group(2)
+
+            # Detect if Chinese font is used as Western font
+            if ascii_font in CHINESE_FONT_NAMES:
+                conflicts.append({
+                    "line_number": line_number,
+                    "context": context_str,
+                    "text": raw_line.strip(),
+                    "type": "font_common_sense_conflict",
+                    "reasons": [
+                        f"西文字体 '{ascii_font}' 是中文字体，不应作为西文字体。",
+                        "中文论文西文通常使用 Times New Roman 或 Arial。",
+                        "请检查原文是否有'西文使用Times'或类似说明。"
+                    ],
+                    "detected": {
+                        "east_asia_font": east_asia_font,
+                        "ascii_font": ascii_font,
+                    },
+                })
+
+        # Pattern 4: Standalone Western font declaration "西文字体：宋体"
+        for match in WESTERN_FONT_STANDALONE.finditer(raw_line):
+            ascii_font = match.group(1)
+            conflicts.append({
+                "line_number": line_number,
+                "context": context_str,
+                "text": raw_line.strip(),
+                "type": "font_common_sense_conflict",
+                "reasons": [
+                    f"西文字体声明为 '{ascii_font}'，这是中文字体。",
+                    "中文论文西文通常使用 Times New Roman 或 Arial。",
+                    "请检查原文是否有'西文使用Times'或类似说明。",
+                    "如果模板确实使用中文字体作为西文字体，请确认是否符合学校要求。"
+                ],
+                "detected": {
+                    "ascii_font": ascii_font,
+                },
+            })
+
+    return {
+        "spec_path": str(spec_path),
+        "status": "pass" if not conflicts else "needs_revision",
+        "conflicts": conflicts,
+        "summary": {
+            "conflict_count": len(conflicts),
+            "conflict_types": list({c["type"] for c in conflicts}),
+        },
     }

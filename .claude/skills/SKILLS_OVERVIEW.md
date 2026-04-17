@@ -24,6 +24,150 @@ Skills are the building blocks for document formatting workflows. They follow an
 | **OpenSpec** | `openspec-propose`, `openspec-apply-change`, `openspec-archive-change`, `openspec-explore` | Change lifecycle management |
 | **Utility** | `peek-thinking` | Model debugging and thinking observation |
 
+## Subagent Architecture
+
+Workflow skills (`extract-spec`, `evaluate-spec`, `check-thesis`) use a **two-layer architecture**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Main Agent (调度者 + 评估者)                      │
+│                                                                         │
+│  责任：                                                                  │
+│  1. 调度 subagent 执行具体任务                                           │
+│  2. 评估 subagent 输出的完整性和正确性                                   │
+│  3. 合并输出到最终产物                                                   │
+│                                                                         │
+│  禁止：                                                                  │
+│  - 直接执行 parse-word, query-word-style, paragraph-stats               │
+│  - 自己评判自己                                                          │
+│  - 跳过评估层检查                                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ Agent tool 调用
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          Subagent (执行者)                              │
+│                                                                         │
+│  Prompt 模板文件：                                                       │
+│  - font-extractor-prompt.md    (字体规则提取，三源验证)                  │
+│  - layout-extractor-prompt.md  (页面设置提取)                           │
+│  - heading-extractor-prompt.md (标题规则提取)                           │
+│  - evaluator-prompt.md         (spec.md 评估，强制检查顺序)             │
+│  - rule-checker-prompt.md      (确定性规则检查，完整性回溯)             │
+│  - semantic-checker-prompt.md  (语义规则检查)                           │
+│                                                                         │
+│  输出格式（标准化）：                                                    │
+│  - status: "DONE" | "BLOCKED" | "NEEDS_CONTEXT"                        │
+│  - output: 任务输出                                                      │
+│  - cross_validation: 交叉验证记录                                        │
+│  - tool_errors: 工具错误列表（必须报告）                                 │
+│  - common_sense_check: "pass" | "needs_revision"                       │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**关键设计：主 Agent 不直接执行任务**
+
+| 方面 | 旧架构 | 新架构 |
+|------|--------|--------|
+| 任务执行 | 主 Agent 直接调用工具 | Subagent 执行，主 Agent 调度 |
+| 错误捕捉 | 无评估层，错误静默发生 | 主 Agent 检查 subagent 输出 |
+| 上下文隔离 | 所有任务同一上下文 | 每个任务独立上下文 |
+| 流程控制 | SKILL.md 是指导 | SKILL.md 是调度协议 |
+
+**评估层检查（主 Agent 必须执行）：**
+
+| 检查项 | 通过条件 | 拒绝后果 |
+|--------|----------|----------|
+| cross_validation 存在 | ✅ | ❌ 拒绝，要求重做 |
+| tool_errors 为空 | ✅ | ⚠️ 报告异常 |
+| common_sense_check = pass | ✅ | ❌ 拒绝，要求修正 |
+
+## Standardized Subagent Output Format
+
+所有 subagent 输出必须包含以下字段：
+
+```json
+{
+  "status": "DONE" | "BLOCKED" | "NEEDS_CONTEXT",
+  "output": {
+    // 具体任务输出内容
+    // font-extractor: { "font_rule": {...} }
+    // evaluator: { "evaluation_result": "pass", "issues": [] }
+    // rule-checker: { "check_results": [...], "coverage_status": {...} }
+  },
+  "cross_validation": {
+    "sources": ["style_definition", "actual_paragraphs", "text_instructions"],
+    "style_definition": { "east_asia": "...", "ascii": "..." },
+    "actual_paragraphs": { "east_asia": {...}, "ascii": {...} },
+    "text_instructions": { "found": true, "declaration": "..." },
+    "conflicts": [],
+    "resolution": "text_instructions override" | "style_definition confirmed" | "unresolved"
+  },
+  "tool_errors": [
+    // 必须报告所有工具错误，不能跳过
+    // {"tool": "query-word-text", "error": "无匹配段落", "keyword": "西文"}
+  ],
+  "common_sense_check": "pass" | "needs_revision" | "error"
+}
+```
+
+**字段说明：**
+
+| 字段 | 必需 | 说明 |
+|------|------|------|
+| `status` | ✅ | 任务执行状态：DONE（完成）、BLOCKED（阻塞）、NEEDS_CONTEXT（需要更多信息） |
+| `output` | ✅ | 具体任务输出内容 |
+| `cross_validation` | ✅ | 三源交叉验证记录（font/layout/heading subagent 必需） |
+| `tool_errors` | ✅ | 工具错误列表，必须报告，不能为空就跳过 |
+| `common_sense_check` | ✅ | 常识检查结果：pass、needs_revision 或 error |
+
+**cross_validation 结构（针对提取类 subagent）：**
+
+```json
+{
+  "sources": ["style_definition", "actual_paragraphs", "text_instructions"],
+  "style_definition": { "east_asia": "宋体", "ascii": "宋体" },
+  "actual_paragraphs": {
+    "east_asia": { "value": "宋体", "count": 50 },
+    "ascii": { "value": "宋体", "count": 50 }
+  },
+  "text_instructions": {
+    "found": true,
+    "declaration": "西文使用 Times New Roman"
+  },
+  "conflicts": [
+    { "type": "style_vs_text", "style_ascii": "宋体", "text_ascii": "Times New Roman" }
+  ],
+  "resolution": "text_instructions override"
+}
+```
+
+**tool_errors 结构：**
+
+```json
+[
+  {
+    "tool": "query-word-text",
+    "error": "无匹配段落",
+    "keyword": "西文",
+    "action": "尝试其他关键词"
+  }
+]
+```
+
+**主 Agent 评估逻辑：**
+
+```
+if output.cross_validation.sources.length < 3:
+    reject("缺少三源验证")
+
+if output.tool_errors.length > 0:
+    report("工具错误：{output.tool_errors}")
+
+if output.common_sense_check == "needs_revision":
+    reject("常识检查失败")
+```
+
 ## Skill Hierarchy
 
 ```

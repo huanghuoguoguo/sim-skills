@@ -224,6 +224,11 @@ def cmd_spec_check(args) -> int:
         _write_output(result, args.output)
         return 0 if result["status"] == "pass" else 1
 
+    elif args.mode == "common-sense":
+        result = service.spec_check_common_sense(args.input)
+        _write_output(result, args.output)
+        return 0 if result["status"] == "pass" else 1
+
     else:
         print(f"Unknown mode: {args.mode}", file=sys.stderr)
         return 1
@@ -326,9 +331,9 @@ def main() -> int:
 
     # spec-check subcommand
     spec_check_parser = subparsers.add_parser("spec-check", help="Evaluate spec.md quality")
-    spec_check_parser.add_argument("--mode", required=True, choices=["conflicts", "structure", "body-consistency"],
-                                   help="Check mode: conflicts, structure, or body-consistency")
-    spec_check_parser.add_argument("input", nargs="?", help="Path to spec.md file (for conflicts/structure mode)")
+    spec_check_parser.add_argument("--mode", required=True, choices=["conflicts", "structure", "body-consistency", "common-sense"],
+                                   help="Check mode: conflicts, structure, body-consistency, or common-sense")
+    spec_check_parser.add_argument("input", nargs="?", help="Path to spec.md file (for conflicts/structure/common-sense mode)")
     spec_check_parser.add_argument("--evidence", help="Path to evidence JSON (for body-consistency mode)")
     spec_check_parser.add_argument("--checks", help="Path to checks JSON (for body-consistency mode)")
     spec_check_parser.add_argument("--output", help="Output JSON file path")

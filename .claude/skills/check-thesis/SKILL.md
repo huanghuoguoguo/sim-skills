@@ -7,112 +7,154 @@ description: "Use this skill to check a .docx document against formatting rules 
 
 检查文档是否符合给定的格式规则，输出 Markdown 检查报告。
 
+## 角色：调度者 + 评估者
+
+**主 Agent 不直接执行检查**，而是：
+1. 调度 rule-checker subagent 执行确定性规则检查
+2. 调度 semantic-checker subagent 执行语义规则检查
+3. 评估 subagent 输出的覆盖性
+4. 合并检查结果为 Markdown 报告
+
+---
+
 ## 输入
 
 - 待检查文档：`.docx`
-- 格式规则：任意来源（spec.md、PDF、纯文本、用户口述）
+- 格式规则：spec.md 或其他来源
 
-## 可用工具
+---
 
-| 工具 | 用途 |
-|------|------|
-| `parse-word` | 解析文档结构事实 |
-| `batch-check` | 批量确定性属性比对（`--schema` 查看支持的 check 类型） |
-| `paragraph-stats` | 按条件筛段落并统计属性分布 |
-| `query-word-text` | 按关键词检索段落 |
-| `query-word-style` | 查询样式属性 |
-| `render-word-page` | 渲染指定页为图片 |
-| `visual-check` | 视觉辅助检查工作流（需要 vision 能力） |
+## 执行流程
 
-## 工作方式
-
-Agent 自主规划，典型流程：
-
-### 1. 理解规则
-
-- 阅读用户提供的规则（任何格式）
-- 拆分为确定性规则和语义性规则
-
-### 2. 获取事实
-
-- 调用 `parse-word` 解析文档，输出 facts.json
-- 必要时调用 `query-word-text` 定位摘要、目录、参考文献等区域
-
-### 3. 确定性检查
-
-Agent 根据规则构造 check 指令 JSON，调用 `batch-check` 执行：
+### Step 1: 解析文档（主 Agent 执行）
 
 ```bash
-# 先查看支持哪些 check 类型
-python3 -m sim_docs check --schema
-
-# 执行比对
-python3 -m sim_docs check <facts.json> <checks.json>
+python3 -m sim_docs parse <file.docx> --output facts.json
 ```
 
-Agent 直接构造 check 指令，不需要中间的 spec 翻译步骤。例如：
+### Step 2: 调度 Subagent 并行检查
 
-```json
-[
-  {"type": "font", "scope": "east_asia", "selector": "style:Normal", "style_aliases": ["Normal", "正文", "Body Text"], "expected": "宋体"},
-  {"type": "font_size", "selector": "style:Normal", "style_aliases": ["Normal", "正文", "Body Text"], "expected": 12},
-  {"type": "margin", "side": "left", "expected": 3.0}
-]
+**rule-checker subagent:**
+```
+Agent tool:
+  description: "执行确定性规则检查"
+  prompt: |
+    [使用 rule-checker-prompt.md 模板]
+    
+    文档 facts：{facts_path}
+    spec.md：{spec_path}
 ```
 
-**`style_aliases` 必须完整**：一条规则适用于多个样式名时（如正文同时有 `Normal` 和 `Body Text`），必须将所有样式名列入 `style_aliases`。遗漏任何一个会导致该样式下的段落漏检。如果 spec.md 中列出了"适用样式"，直接使用；否则先调用 `paragraph-stats` 确认文档中实际存在哪些相关样式。
+**semantic-checker subagent:**
+```
+Agent tool:
+  description: "执行语义规则检查"
+  prompt: |
+    [使用 semantic-checker-prompt.md 模板]
+    
+    文档 facts：{facts_path}
+    spec.md：{spec_path}
+```
 
-### 4. 语义检查
+### Step 3: 评估 Subagent 输出（主 Agent 责任）
 
-由 Agent 直接判断：
+#### 3.1 检查 status 字段
 
-- 摘要格式
-- 参考文献格式
-- 目录结构
-- 其他依赖上下文的规则
+| status | 处理 |
+|--------|------|
+| `DONE` | 继续评估 |
+| `NEEDS_CONTEXT` | 报告需要人工确认的项 |
 
-结论标注为 `Agent 判断`，并给出匹配依据。
+#### 3.2 检查 coverage_status（rule-checker）
 
-### 5. 视觉检查
+**⚠️ 关键检查：**
+- `coverage_status.checked` 必须覆盖 spec.md 中所有确定性规则
+- `coverage_status.skipped` 必须有合理理由（如文档不包含此类段落）
+- `coverage_status.errors` 非空 → 报告错误，可能需要修正 style_aliases
 
-对于结构化工具无法覆盖的规则（页码位置、页眉内容、封面版式、目录格式等），参考 `visual-check` skill 的工作流程：
+#### 3.3 检查 completeness_traceback
 
-1. 筛出需要视觉验证的规则
-2. 渲染关键页面（封面、目录页、正文首页等，通常 3-5 页）
-3. Agent 用 vision 逐条分析，输出判断 + 依据 + 置信度
+验证所有原始规则都有检查状态：
+- 不能有规则既不在 checked 也不在 skipped
 
-**前提**：Agent 所用模型必须具备 vision 能力。如果不具备，跳过此步骤并将相关规则标记为"待人工确认"。
+#### 3.4 检查 needs_human_review（semantic-checker）
 
-### 6. 深入调查
+- 记录需要人工确认的语义规则
+- 不能假设"应该没问题"就跳过
 
-对 batch-check 报告的异常，Agent 可按需：
+### Step 4: 处理覆盖性问题
 
-- 调用 `query-word-text` 查看具体段落
-- 调用 `render-word-page` 做视觉复核
+如果 rule-checker 报告 coverage 不完整：
 
-**`unresolved` 结果的处理**：`unresolved`（matched_count 为 0）通常意味着 selector 或 style_aliases 有误，而非文档真的没有该类段落。遇到 unresolved 时必须：
+1. 检查是否 style_aliases 有误
+2. 建议补充缺失的样式名
+3. 重新 dispatch rule-checker
 
-1. 先调用 `paragraph-stats` 确认文档中实际有哪些样式名
-2. 检查 style_aliases 是否遗漏了文档中使用的样式名
-3. 修正 aliases 后重新执行 batch-check
-4. 只有在确认文档确实不包含该类段落时，才将 unresolved 报告为"不适用"
+### Step 5: 合并输出为 Markdown 报告
 
-### 7. 输出报告
+```markdown
+# 论文格式检查报告
 
-Markdown 报告，每条结果包含：
+## 确定性规则检查
 
-- 规则描述
-- 检查结果：通过 / 不通过 / 待人工确认
-- 期望值 vs 实际值
-- 定位信息
-- 来源标注：`Python 检查` 或 `Agent 判断` 或 `视觉检查`
+### 通过项
+[rule-checker coverage_status.checked 中 pass 的项]
 
-同一规则下的多处失败应聚合展示，不要逐段堆叠。
+### 不通过项
+[rule-checker coverage_status.checked 中 fail 的项]
 
-### 8. 完整性回溯
+### 不适用
+[rule-checker coverage_status.skipped 的项]
 
-检查结束后回到原始规则逐条核对，确保无遗漏。
+## 语义规则检查
 
-## 进阶参考
+### Agent 判断
+[semantic-checker output.semantic_results]
 
-完整工作流示例、确定性 vs 语义规则分类表、unresolved 处理流程、报告模板见 [REFERENCE.md](REFERENCE.md)。
+### 待人工确认
+[semantic-checker output.needs_human_review]
+
+## 完整性核对
+
+| 原始规则 | 检查状态 | 来源 |
+|---------|---------|------|
+| 正文字体 | ✅ pass | batch-check |
+| 封面格式 | ⚠️ 待人工确认 | semantic |
+
+## 工具错误记录
+[汇总 tool_errors]
+```
+
+---
+
+## 评估层检查清单
+
+| 检查项 | 通过条件 | 失败后果 |
+|--------|----------|----------|
+| coverage_status.checked 覆盖所有确定性规则 | ✅ | ❌ 重新 dispatch |
+| completeness_traceback = done | ✅ | ❌ 报告遗漏 |
+| tool_errors 为空 | ✅ | ⚠️ 报告异常 |
+| needs_human_review 已列出 | ✅ | ⚠️ 补充列表 |
+
+---
+
+## ⚡ IRON LAW: 所有规则必须有检查状态
+
+**主 Agent 必须核实 completeness_traceback 结果。**
+
+每条原始规则必须有状态：
+- ✅ 已检查（pass 或 fail）
+- ⚠️ 不适用（文档不包含）
+- ⏳ 待人工确认（语义规则）
+
+**禁止：**
+- 有规则无状态
+- 有规则被跳过无理由
+- 假设"应该没问题"就标记 pass
+
+---
+
+## Subagent Prompt 模板位置
+
+- `rule-checker-prompt.md`
+- `semantic-checker-prompt.md`

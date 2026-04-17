@@ -7,64 +7,114 @@ description: "Use this skill to evaluate a spec.md for quality before user revie
 
 评估 `spec.md` 的质量，不负责把规则重新结构化。
 
-评估结果是一个 gate：
+## 角色：调度者 + 评估者
 
-- `pass`：可以进入用户精校 / 下游检查
-- `needs_revision`：必须退回修订
-- `blocked_user_input`：需用户裁决
+**主 Agent 不直接执行检查**，而是：
+1. 调度 evaluator subagent 执行程序化检查
+2. 评估 subagent 输出的完整性
+3. 核实检查覆盖所有必要维度
 
-## 评估维度
+---
 
-1. **覆盖性** — 是否包含页面设置、正文、标题、图题、表题、摘要、参考文献等主题
-2. **具体性** — 规则是否为明确属性和值，而非模糊描述
-3. **一致性** — 单位、字号写法、术语是否统一；不同来源之间是否有冲突
-4. **可追溯性** — 规则是否标明来自哪个文件、样式或说明
-5. **完备性** — 无法确认的项是否进入"待确认项"
+## 执行流程
 
-## 辅助诊断脚本
+### Step 1: 调度 evaluator subagent
 
-```bash
-# 检查核心主题是否覆盖
-python3 -m sim_docs spec-check --mode structure <spec.md>
+使用 Agent tool 调用：
 
-# 检查明显内部冲突（如"小四 vs 10.5pt"、行距缺少模式）
-python3 -m sim_docs spec-check --mode conflicts <spec.md>
+```
+Agent tool:
+  description: "评估 spec.md 质量"
+  prompt: |
+    [使用 evaluator-prompt.md 模板]
+    
+    spec.md 文件：{spec_path}
 ```
 
-以上两个检查**必须运行**。
+### Step 2: 评估 subagent 输出（主 Agent 责任）
 
-## 程序化复核（必须执行）
+#### 2.1 检查 status 字段
 
-用上游源文件做交叉验证，**不是可选步骤**：
+| status | 处理 |
+|--------|------|
+| `DONE` | 检查是否真的通过所有检查 |
+| `BLOCKED` | 报告阻塞原因（通常是 common-sense check 失败） |
+| `NEEDS_CONTEXT` | 提示用户提供更多信息 |
 
-```bash
-# 1. 用 paragraph-stats 采样正文段落
-python3 -m sim_docs stats <file.docx> \
-  --style-hint normal --min-length 20 --require-body-shape \
-  --output evidence.json
+#### 2.2 检查 common_sense_check 字段
 
-# 2. Agent 根据 spec.md 构造正文相关的 check 指令 -> checks.json
+**⚠️ 关键检查：**
+- `common_sense_check` 必须是 `"pass"`
+- 如果是 `"needs_revision"`，整个评估失败，必须退回修正 spec.md
 
-# 3. 比对正文规则与实际分布
-python3 -m sim_docs spec-check --mode body-consistency \
-  --evidence evidence.json --checks checks.json
+#### 2.3 检查 cross_validation 字段
+
+验证所有检查都已执行：
+- `cross_validation.common_sense` 必须存在
+- `cross_validation.structure` 必须存在
+- `cross_validation.conflicts` 必须存在
+
+#### 2.4 检查 tool_errors 字段
+
+- `tool_errors` 非空 → 报告工具错误，评估结果可能不可靠
+
+### Step 3: 处理评估结果
+
+**如果 evaluator 返回 BLOCKED（common-sense check 失败）：**
+
+1. 报告失败原因
+2. 列出 spec.md 中需要修正的行
+3. 建议修正方案
+4. 等待用户修正后重新评估
+
+**如果 evaluator 返回 DONE 但有 issues：**
+
+1. 报告 issues 列表（缺失章节、内部冲突）
+2. 建议修正方案
+3. 标记为 `needs_revision`
+
+### Step 4: 输出最终评估结果
+
+```
+评估结果：pass / needs_revision / blocked_user_input
+
+检查通过项：
+- common-sense check: ✅
+- structure check: ✅
+- conflicts check: ✅
+
+存在问题：
+- [列出 issues]
+
+工具错误：
+- [列出 tool_errors]
 ```
 
-**标题规则也必须验证**：对每级标题调用 `python3 -m sim_docs stats --style-hint "heading N"`，比对实际段落的字体/字号/行距与 spec.md 中的规则是否一致。
+---
 
-## 输出
+## 评估层检查清单
 
-简短评估结果，包含：通过项、缺失项、模糊项、冲突项、建议修改列表。
+| 检查项 | 通过条件 | 失败后果 |
+|--------|----------|----------|
+| common_sense_check = pass | ✅ | ❌ 整体评估失败 |
+| cross_validation.common_sense 存在 | ✅ | ❌ 流程错误，重新 dispatch |
+| cross_validation.structure 存在 | ✅ | ⚠️ 报告缺失 |
+| cross_validation.conflicts 存在 | ✅ | ⚠️ 报告缺失 |
+| tool_errors 为空 | ✅ | ⚠️ 报告异常 |
 
-如果存在以下问题应判为 `needs_revision`：
+---
 
-- 同一规则内部矛盾
-- 关键主题缺失
-- 规则无法映射到明确检查范围
-- 正文规则只引用默认样式，没有实际段落证据
+## ⚡ IRON LAW: Common-Sense Check 必须先通过
 
-## 约束
+**主 Agent 必须核实 evaluator 的 common_sense_check 结果。**
 
-- 不要退化成纯格式检查或 schema 验证
-- 发现遗漏时，指出缺的规则和缺的证据，不要泛泛而谈
-- 最多往返 2-3 轮；仍 unresolved 的项转为"待用户确认项"
+如果 evaluator 返回 `common_sense_check = needs_revision`：
+- 不能输出 `pass`
+- 不能跳过修正
+- 必须报告冲突详情并要求修正 spec.md
+
+---
+
+## Subagent Prompt 模板位置
+
+- `evaluator-prompt.md`
