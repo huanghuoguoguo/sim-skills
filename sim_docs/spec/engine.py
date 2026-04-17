@@ -11,8 +11,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .spec_rules import parse_font_size_signals, parse_heading
-from .utils import values_close
+from sim_docs.spec.rules import parse_font_size_signals, parse_heading
+from sim_docs.core.helpers import values_close
 
 
 LINE_SPACING_MODE_KEYWORDS = {"固定值", "最小值", "多倍行距", "exact", "at_least", "multiple"}

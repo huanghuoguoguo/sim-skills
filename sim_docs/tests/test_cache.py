@@ -8,7 +8,7 @@ import time
 import unittest
 from pathlib import Path
 
-from sim_docs.cache import DocumentCache, CacheEntry, CacheStats
+from sim_docs.core.cache import DocumentCache, CacheEntry, CacheStats
 
 
 class TestCacheStats(unittest.TestCase):

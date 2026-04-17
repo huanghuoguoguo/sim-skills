@@ -9,7 +9,7 @@ import re
 from collections import Counter
 from typing import Any
 
-from .utils import normalized
+from sim_docs.core.helpers import normalized
 
 
 LATIN_RE = re.compile(r"[A-Za-z]")

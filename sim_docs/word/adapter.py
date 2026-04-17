@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sim_docs.docx_parser import parse_word_document
-from sim_docs.docx_parser_models import WordDocumentFacts
-from ..utils import resolve_path as _resolve_path_glob
+from sim_docs.word.parser import parse_word_document
+from sim_docs.word.models import WordDocumentFacts
+from sim_docs.core.paths import resolve_path as _resolve_path_glob
 
 
 class WordAdapter:

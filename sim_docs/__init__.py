@@ -21,8 +21,8 @@ _VALIDATE_PATH = Path(__file__).resolve().parent.parent / ".claude" / "skills" /
 if str(_VALIDATE_PATH) not in sys.path:
     sys.path.insert(0, str(_VALIDATE_PATH))
 
-from .service import DocumentService
-from .docx_parser_models import WordDocumentFacts, ParagraphFact, StyleFact, HeaderFooterFact
+from sim_docs.service import DocumentService
+from sim_docs.word.models import WordDocumentFacts, ParagraphFact, StyleFact, HeaderFooterFact
 
 __all__ = ["DocumentService", "WordDocumentFacts", "ParagraphFact", "StyleFact", "HeaderFooterFact"]
 __version__ = "0.1.0"

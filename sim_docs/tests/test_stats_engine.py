@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from sim_docs.stats_engine import compute_stats, matches_filter, filter_and_compute_stats
+from sim_docs.analysis.stats import compute_stats, matches_filter, filter_and_compute_stats
 
 
 class TestMatchesFilter(unittest.TestCase):

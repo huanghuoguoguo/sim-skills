@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sim_docs.spec_engine import (
+from sim_docs.spec.engine import (
     check_conflicts,
     check_structure,
     check_body_consistency,

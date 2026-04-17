@@ -11,17 +11,18 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .cache import DocumentCache
-from .adapters.word import WordAdapter, WordDocumentFacts
-from .check_engine import run_batch_check as _run_batch_check_engine, CHECK_SCHEMA
-from .stats_engine import filter_and_compute_stats
-from .pdf_engine import extract_pdf
-from .inspect_engine import inspect_document
-from .compare_engine import compare_documents, generate_diff_report
-from .validate_engine import validate_document
-from .spec_engine import check_conflicts, check_structure, check_body_consistency, check_common_sense
+from sim_docs.core.cache import DocumentCache
+from sim_docs.word.adapter import WordAdapter, WordDocumentFacts
+from sim_docs.analysis.checks import run_batch_check as _run_batch_check_engine, CHECK_SCHEMA
+from sim_docs.analysis.stats import filter_and_compute_stats
+from sim_docs.pdf.extract import extract_pdf
+from sim_docs.word.inspect import inspect_document
+from sim_docs.word.compare import compare_documents, generate_diff_report
+from sim_docs.word.validate import validate_document
+from sim_docs.spec.engine import check_conflicts, check_structure, check_body_consistency, check_common_sense
 
-from .utils import normalized, values_close, resolve_path as _resolve_path_glob
+from sim_docs.core.helpers import normalized, values_close
+from sim_docs.core.paths import resolve_path as _resolve_path_glob
 
 
 class DocumentService:
@@ -205,47 +206,9 @@ class DocumentService:
         Returns:
             PNG bytes if output is None, otherwise output path.
         """
+        from sim_docs.word.render import render_page
         resolved = self._resolve_path(path)
-        output_path = str(output) if output else None
-
-        # Use tempfile for intermediate PDF conversion
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Convert to PDF using LibreOffice
-            pdf_path = self._convert_to_pdf(resolved, tmpdir)
-
-            # Extract page as image using PyMuPDF
-            try:
-                import fitz
-            except ImportError:
-                raise ImportError(
-                    "PyMuPDF (fitz) is required for page rendering. "
-                    "Install it with: pip install PyMuPDF"
-                )
-
-            doc = fitz.open(pdf_path)
-
-            if page < 1 or page > len(doc):
-                raise ValueError(f"Page {page} out of bounds. Document has {len(doc)} pages.")
-
-            page_obj = doc.load_page(page - 1)
-            pix = page_obj.get_pixmap(dpi=150)
-
-            if output_path:
-                pix.save(output_path)
-                return output_path
-            else:
-                return pix.tobytes("png")
-
-    def _convert_to_pdf(self, docx_path: str, outdir: str) -> str:
-        """Convert .docx/.dotm to .pdf using LibreOffice."""
-        from .soffice import run_soffice
-        import subprocess
-
-        run_soffice(
-            ["--headless", "--convert-to", "pdf", "--outdir", outdir, docx_path],
-            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-        return str(Path(outdir) / (Path(docx_path).stem + ".pdf"))
+        return render_page(resolved, page=page, output=output)
 
     # -------------------------------------------------------------------------
     # Validate

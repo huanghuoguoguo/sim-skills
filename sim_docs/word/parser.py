@@ -13,7 +13,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml.ns import qn
 from docx.shared import Length
 
-from sim_docs.docx_parser_models import ParagraphFact, StyleFact, WordDocumentFacts, HeaderFooterFact
+from sim_docs.word.models import ParagraphFact, StyleFact, WordDocumentFacts, HeaderFooterFact
 
 
 def parse_word_document(path: str | Path) -> WordDocumentFacts:

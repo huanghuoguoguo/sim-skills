@@ -7,9 +7,9 @@ import json
 import sys
 from pathlib import Path
 
-from .service import DocumentService
-from .check_engine import CHECK_SCHEMA
-from .compare_engine import generate_diff_report
+from sim_docs.service import DocumentService
+from sim_docs.analysis.checks import CHECK_SCHEMA
+from sim_docs.word.compare import generate_diff_report
 
 
 def cmd_parse(args) -> int:
