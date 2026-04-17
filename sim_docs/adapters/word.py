@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-
-# Add __libs__ path for utils import
-_LIBS_PATH = Path(__file__).resolve().parents[2] / ".claude" / "skills" / "__libs__"
-if str(_LIBS_PATH) not in sys.path:
-    sys.path.insert(0, str(_LIBS_PATH))
 
 from sim_docs.docx_parser import parse_word_document
 from sim_docs.docx_parser_models import WordDocumentFacts

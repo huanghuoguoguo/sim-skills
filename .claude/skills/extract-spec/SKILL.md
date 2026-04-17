@@ -62,7 +62,7 @@ description: "Use this skill to extract formatting rules from reference material
 - 必须先调用 `paragraph-stats` 采样实际正文段落：
 
 ```bash
-python3 .claude/skills/paragraph-stats/scripts/run.py <facts.json> \
+python3 -m sim_docs stats <facts.json> \
   --style-hint normal --style-hint "body text" \
   --min-length 20 --require-body-shape \
   --exclude-text 摘要 --exclude-text 致谢 \
@@ -78,7 +78,7 @@ python3 .claude/skills/paragraph-stats/scripts/run.py <facts.json> \
 
 ```bash
 # 示例：验证 Heading 3 的实际属性
-python3 .claude/skills/paragraph-stats/scripts/run.py <facts.json> \
+python3 -m sim_docs stats <facts.json> \
   --style-hint "heading 3"
 ```
 

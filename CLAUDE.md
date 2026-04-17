@@ -63,22 +63,16 @@ python3 -m sim_docs validate <file.docx> [--auto-repair] [-v]
 
 # Inspect raw XML of Word document
 python3 -m sim_docs inspect <file.docx> [--output-dir unpacked/] [--show word/document.xml] [--list]
-```
 
-### Legacy Skill Scripts
-
-The following legacy scripts remain available for backward compatibility:
-
-```bash
-# Diagnose obvious spec conflicts / missing sections
-python3 .claude/skills/evaluate-spec/scripts/check_conflicts.py <spec.md>
-python3 .claude/skills/evaluate-spec/scripts/check_structure.py <spec.md>
-
-# Compare body rules against paragraph evidence
-python3 .claude/skills/evaluate-spec/scripts/check_body_consistency.py --evidence <evidence.json> --checks <checks.json>
+# Evaluate spec.md quality
+python3 -m sim_docs spec-check --mode conflicts <spec.md>
+python3 -m sim_docs spec-check --mode structure <spec.md>
+python3 -m sim_docs spec-check --mode body-consistency --evidence <evidence.json> --checks <checks.json>
 ```
 
 ## Skill Layout
+
+> **Navigation:** See `.claude/skills/SKILLS_OVERVIEW.md` for a complete skill hierarchy and quick reference.
 
 ```text
 sim_docs/                       # Unified document service layer
@@ -86,6 +80,8 @@ sim_docs/                       # Unified document service layer
 ├── cli.py                      # CLI entry point (python3 -m sim_docs)
 ├── service.py                  # DocumentService facade
 ├── cache.py                    # LRU cache for parsed documents
+├── docx_parser.py              # Low-level Word parser (CJK/ASCII font separation)
+├── docx_parser_models.py       # Parser dataclasses (ParagraphFact, StyleFact)
 ├── check_engine.py             # Batch check logic
 ├── stats_engine.py             # Paragraph statistics logic
 ├── pdf_engine.py               # PDF extraction logic
@@ -93,8 +89,12 @@ sim_docs/                       # Unified document service layer
 ├── compare_engine.py           # Document comparison logic
 ├── validate_engine.py          # XSD validation logic
 ├── spec_engine.py              # Spec evaluation logic
-└── adapters/
-    └── word.py                 # Adapter to docx_parser
+├── adapters/
+│   └── word.py                 # Adapter to docx_parser
+└── tests/
+    ├── test_cache.py           # Cache tests
+    ├── test_spec_engine.py     # Spec engine tests
+    └── test_stats_engine.py    # Stats engine tests
 
 .claude/skills/
 ├── batch-check/SKILL.md        # workflow: property comparison

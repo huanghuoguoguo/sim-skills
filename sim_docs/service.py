@@ -7,7 +7,6 @@ rendering documents with built-in caching support.
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -21,11 +20,6 @@ from .inspect_engine import inspect_document
 from .compare_engine import compare_documents, generate_diff_report
 from .validate_engine import validate_document
 from .spec_engine import check_conflicts, check_structure, check_body_consistency
-
-# Add __libs__ path for utility imports
-_LIBS_PATH = Path(__file__).resolve().parents[1] / ".claude" / "skills" / "__libs__"
-if str(_LIBS_PATH) not in sys.path:
-    sys.path.insert(0, str(_LIBS_PATH))
 
 from utils import normalized, values_close, resolve_path as _resolve_path_glob
 
@@ -321,11 +315,6 @@ class DocumentService:
         """
         resolved = self._resolve_path(path)
 
-        # Import read_text_source
-        libs_path = Path(__file__).resolve().parents[1] / ".claude" / "skills" / "__libs__"
-        if str(libs_path) not in sys.path:
-            sys.path.insert(0, str(libs_path))
-
         from text_sources import read_text_source
 
         text = read_text_source(resolved)
@@ -343,7 +332,7 @@ class DocumentService:
         self,
         path: str | Path,
         pages: str | None = None,
-        extract_tables: bool = False,
+        include_tables: bool = False,
         extract_all: bool = False,
     ) -> dict:
         """Extract text, tables, and structure from PDF files.
@@ -353,7 +342,7 @@ class DocumentService:
         Args:
             path: Path to PDF file.
             pages: Page range (e.g., "1-5", "1,3,5").
-            extract_tables: Extract tables only.
+            include_tables: Extract tables only.
             extract_all: Full extraction (text + tables).
 
         Returns:
@@ -363,7 +352,7 @@ class DocumentService:
         return extract_pdf(
             resolved,
             pages=pages,
-            extract_tables=extract_tables,
+            include_tables=include_tables,
             extract_all_content=extract_all,
         )
 

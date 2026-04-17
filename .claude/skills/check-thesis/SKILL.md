@@ -44,10 +44,10 @@ Agent 根据规则构造 check 指令 JSON，调用 `batch-check` 执行：
 
 ```bash
 # 先查看支持哪些 check 类型
-python3 .claude/skills/batch-check/scripts/run.py --schema
+python3 -m sim_docs check --schema
 
 # 执行比对
-python3 .claude/skills/batch-check/scripts/run.py <facts.json> <checks.json>
+python3 -m sim_docs check <facts.json> <checks.json>
 ```
 
 Agent 直接构造 check 指令，不需要中间的 spec 翻译步骤。例如：

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .service import DocumentService
 from .check_engine import CHECK_SCHEMA
+from .compare_engine import generate_diff_report
 
 
 def cmd_parse(args) -> int:
@@ -173,7 +174,7 @@ def cmd_read_pdf(args) -> int:
     result = service.read_pdf(
         args.input,
         pages=args.pages,
-        extract_tables=args.tables,
+        include_tables=args.tables,
         extract_all=args.all,
     )
     _write_output(result, args.output)
@@ -188,7 +189,7 @@ def cmd_compare(args) -> int:
 
     if args.report:
         # Generate markdown report
-        report = _generate_diff_report(result["diffs"], args.reference, args.target)
+        report = generate_diff_report(result["diffs"], args.reference, args.target)
         Path(args.report).write_text(report, encoding="utf-8")
         print(f"Markdown report saved to: {args.report}", file=sys.stderr)
 
@@ -236,47 +237,6 @@ def _write_output(data, output_path: str | None) -> None:
     else:
         sys.stdout.write(content)
         sys.stdout.write("\n")
-
-
-def _generate_diff_report(diffs: list, ref_path: str, target_path: str) -> str:
-    """Generate Markdown report for document comparison."""
-    from datetime import datetime
-
-    lines = [
-        "# 文档格式比对报告",
-        "",
-        f"**参考文档**: {Path(ref_path).name}",
-        f"**目标文档**: {Path(target_path).name}",
-        f"**比对时间**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "",
-        "## 总计",
-        "",
-        f"共发现 **{len(diffs)}** 处差异。",
-        "",
-    ]
-
-    by_type = {"structure": [], "layout": [], "style": [], "other": []}
-    for diff in diffs:
-        by_type.get(diff.get("type", "other"), by_type["other"]).append(diff)
-
-    if by_type["structure"]:
-        lines.append("## 结构差异")
-        lines.append("")
-        for i, diff in enumerate(by_type["structure"], 1):
-            lines.append(f"{i}. {diff['message']}")
-            lines.append("")
-
-    if by_type["layout"]:
-        lines.append("## 布局差异")
-        lines.append("")
-        for i, diff in enumerate(by_type["layout"], 1):
-            lines.append(f"{i}. {diff['message']}")
-            lines.append("")
-
-    if not diffs:
-        lines.append("两份文档格式一致。")
-
-    return "\n".join(lines)
 
 
 def main() -> int:

@@ -9,14 +9,6 @@ import re
 from collections import Counter
 from typing import Any
 
-# Import utilities from __libs__
-import sys
-from pathlib import Path
-
-_LIBS_PATH = Path(__file__).resolve().parents[1] / ".claude" / "skills" / "__libs__"
-if str(_LIBS_PATH) not in sys.path:
-    sys.path.insert(0, str(_LIBS_PATH))
-
 from utils import normalized
 
 

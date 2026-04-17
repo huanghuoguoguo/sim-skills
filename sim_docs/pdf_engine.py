@@ -177,7 +177,7 @@ def extract_all(pdf_path: str | Path, page_range: str | None = None) -> dict:
 def extract_pdf(
     pdf_path: str | Path,
     pages: str | None = None,
-    extract_tables: bool = False,
+    include_tables: bool = False,
     extract_all_content: bool = False,
 ) -> dict:
     """Extract content from PDF file.
@@ -185,7 +185,7 @@ def extract_pdf(
     Args:
         pdf_path: Path to PDF file.
         pages: Page range string (e.g., "1-5").
-        extract_tables: Extract tables only.
+        include_tables: Extract tables only.
         extract_all_content: Full extraction (text + tables).
 
     Returns:
@@ -203,7 +203,7 @@ def extract_pdf(
     if pdf_path.suffix.lower() != ".pdf":
         raise ValueError(f"Not a PDF file: {pdf_path}")
 
-    if extract_tables:
+    if include_tables:
         return extract_tables(pdf_path, pages)
     elif extract_all_content:
         return extract_all(pdf_path, pages)

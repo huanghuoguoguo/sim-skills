@@ -53,7 +53,7 @@ pages_to_check = {
 
 ```bash
 # 渲染指定页
-python3 .claude/skills/render-word-page/scripts/run.py <file.docx> --page <N> --output page_<N>.png
+python3 -m sim_docs render <file.docx> --page <N> --output page_<N>.png
 ```
 
 ### 4. Agent 视觉分析

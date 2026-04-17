@@ -7,7 +7,7 @@ Advanced patterns, complete workflow examples, and troubleshooting for thesis fo
 ### Step 1: Parse the document
 
 ```bash
-python3 .claude/skills/parse-word/scripts/run.py thesis.docx --output facts.json
+python3 -m sim_docs parse thesis.docx --output facts.json
 ```
 
 ### Step 2: Discover actual styles
@@ -16,15 +16,15 @@ Before constructing checks, always confirm what style names the document uses:
 
 ```bash
 # Body text styles
-python3 .claude/skills/paragraph-stats/scripts/run.py facts.json \
+python3 -m sim_docs stats facts.json \
   --style-hint normal --style-hint "body text" \
   --min-length 20 --require-body-shape
 
 # Heading styles
-python3 .claude/skills/paragraph-stats/scripts/run.py facts.json \
+python3 -m sim_docs stats facts.json \
   --style-hint "heading 1"
 
-python3 .claude/skills/paragraph-stats/scripts/run.py facts.json \
+python3 -m sim_docs stats facts.json \
   --style-hint "heading 2"
 ```
 
@@ -37,17 +37,17 @@ Write checks.json directly from the rules. See `batch-check/REFERENCE.md` for co
 ### Step 4: Run batch-check
 
 ```bash
-python3 .claude/skills/batch-check/scripts/run.py facts.json checks.json --output result.json
+python3 -m sim_docs check facts.json checks.json --output result.json
 ```
 
 ### Step 5: Investigate failures
 
 ```bash
 # Find specific paragraphs by keyword
-python3 .claude/skills/query-word-text/scripts/run.py thesis.docx --keyword "摘要"
+python3 -m sim_docs query-text thesis.docx --keyword "摘要"
 
 # Visual verification of a specific page
-python3 .claude/skills/render-word-page/scripts/run.py thesis.docx --page 1 --output page1.png
+python3 -m sim_docs render thesis.docx --page 1 --output page1.png
 ```
 
 ## Deterministic vs Semantic Rules
@@ -87,7 +87,7 @@ These require context understanding and cannot be expressed as simple property c
 
 1. Run `paragraph-stats` to see actual style names:
    ```bash
-   python3 .claude/skills/paragraph-stats/scripts/run.py facts.json --style-hint normal
+   python3 -m sim_docs stats facts.json --style-hint normal
    ```
 
 2. Compare output `style_distribution` with your `style_aliases`

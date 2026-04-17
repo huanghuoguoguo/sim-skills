@@ -125,8 +125,12 @@ sim_docs/
 ├── compare_engine.py    # Document comparison logic
 ├── validate_engine.py   # XSD validation logic
 ├── spec_engine.py       # Spec evaluation logic
-└── adapters/
-    └── word.py          # Adapter interface
+├── adapters/
+│   └── word.py          # Adapter interface
+└── tests/
+    ├── test_cache.py    # Cache tests
+    ├── test_spec_engine.py # Spec engine tests
+    └── test_stats_engine.py # Stats engine tests
 ```
 
 The service layer provides:

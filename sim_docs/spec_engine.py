@@ -8,14 +8,8 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
-
-# Add __libs__ path for utility imports
-_LIBS_PATH = Path(__file__).resolve().parents[1] / ".claude" / "skills" / "__libs__"
-if str(_LIBS_PATH) not in sys.path:
-    sys.path.insert(0, str(_LIBS_PATH))
 
 from spec_rules import parse_font_size_signals, parse_heading
 from utils import values_close
