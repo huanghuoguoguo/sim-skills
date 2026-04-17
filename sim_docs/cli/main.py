@@ -7,7 +7,7 @@ import argparse
 from .commands import parse, query, check, stats, render, validate, inspect, compare, read, spec
 
 
-# Explicit command registry
+# Explicit list avoids importlib magic; easier for type checkers and debugging
 COMMANDS = [
     (parse.NAME, parse.HELP, parse.add_parser, parse.run),
     (query.NAME_STYLE, query.HELP_STYLE, query.add_parser_style, query.run_style),
@@ -32,7 +32,6 @@ def main() -> int:
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # Register all commands
     handlers = {}
     for name, help_text, add_parser_fn, run_fn in COMMANDS:
         add_parser_fn(subparsers)

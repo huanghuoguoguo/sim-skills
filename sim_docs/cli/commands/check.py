@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import argparse
-import json
-from pathlib import Path
-
 from sim_docs.api import analysis
 from sim_docs.analysis.checks import CHECK_SCHEMA
-from ._base import write_output
+from ._base import write_output, load_checks_json
 
 
 NAME = "check"
@@ -28,10 +24,7 @@ def run(args) -> int:
         write_output(CHECK_SCHEMA, None)
         return 0
 
-    checks_path = Path(args.checks).expanduser().resolve()
-    checks_raw = json.loads(checks_path.read_text(encoding="utf-8"))
-    checks = checks_raw.get("checks", checks_raw) if isinstance(checks_raw, dict) else checks_raw
-
+    checks = load_checks_json(args.checks)
     result = analysis.check(args.input, checks)
     write_output(result, args.output)
     return 0

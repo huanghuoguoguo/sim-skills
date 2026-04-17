@@ -26,8 +26,7 @@ class DocumentService:
     """
 
     def __init__(self, cache_size: int = 32):
-        """Initialize service (ignored - api uses shared cache)."""
-        # Cache size ignored - api uses shared singleton cache
+        """Initialize service. Parameter ignored - api uses shared cache."""
         pass
 
     def parse(self, path: str | Path) -> WordDocumentFacts:

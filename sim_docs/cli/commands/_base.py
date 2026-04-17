@@ -3,31 +3,19 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-from typing import Protocol
+
+from sim_docs.core.io import write_json_output
+from sim_docs.core.paths import resolve_path
 
 
 def write_output(data, output_path: str | None = None) -> None:
     """Write JSON data to file or stdout."""
-    content = json.dumps(data, ensure_ascii=False, indent=2)
-    if output_path:
-        Path(output_path).write_text(content, encoding="utf-8")
-    else:
-        sys.stdout.write(content)
-        sys.stdout.write("\n")
+    write_json_output(data, output_path)
 
 
-class Command(Protocol):
-    """Protocol for CLI commands."""
-
-    NAME: str
-    HELP: str
-
-    def add_parser(self, subparsers) -> None:
-        """Add subparser for this command."""
-        ...
-
-    def run(self, args) -> int:
-        """Execute command, return exit code."""
-        ...
+def load_checks_json(path: str) -> list | dict:
+    """Load checks from JSON file, unwrapping {"checks": [...]} if present."""
+    resolved = resolve_path(path)
+    raw = json.loads(Path(resolved).read_text(encoding="utf-8"))
+    return raw.get("checks", raw) if isinstance(raw, dict) else raw

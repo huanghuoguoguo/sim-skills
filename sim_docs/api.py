@@ -39,7 +39,6 @@ from sim_docs.spec.engine import (
 from sim_docs.core.paths import resolve_path
 
 
-# Shared process-level cache
 _cache = DocumentCache(max_size=32)
 
 
@@ -193,7 +192,6 @@ class SpecNamespace:
         return check_common_sense(resolved)
 
 
-# Singleton namespace instances
 word = WordNamespace()
 analysis = AnalysisNamespace()
 pdf = PdfNamespace()
