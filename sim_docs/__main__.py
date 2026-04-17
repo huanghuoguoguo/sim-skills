@@ -7,6 +7,6 @@ Usage:
 
 from __future__ import annotations
 
-from .cli import main
+from .cli.main import main
 
 raise SystemExit(main())
